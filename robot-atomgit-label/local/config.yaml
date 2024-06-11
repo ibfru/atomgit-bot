@@ -1,0 +1,11 @@
+config_items:
+  - repos:  #robot需管理的仓库列表
+    - ibfuorg/fengchaopub
+#    - ibforu/community
+    clear_labels: # source branch changed 事件发生后 需要移除的标签列表
+      - approved
+      - wait_confirm
+      - lgtm
+    labels_to_validate: #验证标签时效性的配置
+      - label: kind/seeupdate
+        active_time: 1 #表示标签创建后多少小时失效
