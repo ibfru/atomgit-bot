@@ -6,9 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"sigs.k8s.io/yaml"
 	"strings"
 	"time"
+
+	"sigs.k8s.io/yaml"
 
 	"github.com/google/go-github/v36/github"
 	"github.com/sirupsen/logrus"

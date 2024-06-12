@@ -7,8 +7,8 @@ import (
 	"github.com/opensourceways/community-robot-lib/giteeclient"
 	"github.com/opensourceways/community-robot-lib/logrusutil"
 	liboptions "github.com/opensourceways/community-robot-lib/options"
-	"github.com/opensourceways/community-robot-lib/robot-gitee-framework"
 	"github.com/opensourceways/community-robot-lib/secret"
+	"github.com/opensourceways/robot-gitee-lib/framework"
 	"github.com/sirupsen/logrus"
 )
 

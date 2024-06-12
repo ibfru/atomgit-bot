@@ -21,10 +21,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/opensourceways/go-atomgit/atomgit"
 	"os"
 	"reflect"
 	"strings"
+
+	"github.com/opensourceways/go-atomgit/atomgit"
 )
 
 var (

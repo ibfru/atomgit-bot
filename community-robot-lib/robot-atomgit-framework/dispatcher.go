@@ -4,13 +4,14 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"github.com/opensourceways/community-robot-lib/config"
-	sdk "github.com/opensourceways/go-atomgit/atomgit"
-	"github.com/sirupsen/logrus"
 	"io"
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/opensourceways/community-robot-lib/config"
+	sdk "github.com/opensourceways/go-atomgit/atomgit"
+	"github.com/sirupsen/logrus"
 )
 
 const (

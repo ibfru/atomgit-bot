@@ -11,10 +11,11 @@ package integration
 import (
 	"context"
 	"fmt"
-	"github.com/opensourceways/go-atomgit/atomgit"
 	"math/rand"
 	"net/http"
 	"os"
+
+	"github.com/opensourceways/go-atomgit/atomgit"
 )
 
 var (

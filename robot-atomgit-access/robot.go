@@ -4,15 +4,16 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"sync"
+	"time"
+
 	_ "github.com/opensourceways/community-robot-lib/atomgitclient"
 	"github.com/opensourceways/community-robot-lib/config"
 	framework "github.com/opensourceways/community-robot-lib/robot-atomgit-framework"
 	sdk "github.com/opensourceways/go-atomgit/atomgit"
 	"github.com/sirupsen/logrus"
-	"io"
-	"net/http"
-	"sync"
-	"time"
 )
 
 const botName = "robot-atomgit-access"

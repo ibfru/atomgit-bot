@@ -1,8 +1,9 @@
 package kafka
 
 import (
-	"github.com/opensourceways/community-robot-lib/mq"
 	"testing"
+
+	"github.com/opensourceways/community-robot-lib/mq"
 )
 
 func TestBroker(t *testing.T) {

@@ -4,8 +4,8 @@ import (
 	"errors"
 
 	"github.com/opensourceways/community-robot-lib/config"
-	"github.com/opensourceways/community-robot-lib/robot-gitee-framework"
 	sdk "github.com/opensourceways/go-gitee/gitee"
+	"github.com/opensourceways/robot-gitee-lib/framework"
 	"github.com/sirupsen/logrus"
 )
 

@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"sort"
+
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 type configuration struct {
