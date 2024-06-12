@@ -16270,6 +16270,14 @@ func (p *PullRequest) GetNumber() int {
 	return *p.Number
 }
 
+// GetLabels returns the Labels field if it's non-nil, zero value otherwise.
+func (p *PullRequest) GetLabels() []*Label {
+	if p == nil || p.Labels == nil {
+		return nil
+	}
+	return p.Labels
+}
+
 // GetPatchURL returns the PatchURL field if it's non-nil, zero value otherwise.
 func (p *PullRequest) GetPatchURL() string {
 	if p == nil || p.PatchURL == nil {

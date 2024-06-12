@@ -140,8 +140,8 @@ func (s *PullRequestsService) CreateComment(ctx context.Context, owner, repo str
 		return nil, nil, err
 	}
 	// TODO: remove custom Accept headers when their respective API fully launches.
-	acceptHeaders := []string{mediaTypeReactionsPreview, mediaTypeMultiLineCommentsPreview}
-	req.Header.Set("Accept", strings.Join(acceptHeaders, ", "))
+	//acceptHeaders := []string{mediaTypeReactionsPreview, mediaTypeMultiLineCommentsPreview}
+	//req.Header.Set("Accept", strings.Join(acceptHeaders, ", "))
 
 	c := new(PullRequestComment)
 	resp, err := s.client.Do(ctx, req, c)
@@ -157,15 +157,13 @@ func (s *PullRequestsService) CreateComment(ctx context.Context, owner, repo str
 // GitHub API docs: https://docs.github.com/rest/pulls/comments#create-a-review-comment-for-a-pull-request
 //
 //meta:operation POST /repos/{owner}/{repo}/pulls/{pull_number}/comments
-func (s *PullRequestsService) CreateCommentInReplyTo(ctx context.Context, owner, repo string, number int, body string, commentID int64) (*PullRequestComment, *Response, error) {
+func (s *PullRequestsService) CreateCommentInReplyTo(ctx context.Context, owner, repo string, number int, body, commentID string) (*PullRequestComment, *Response, error) {
 	comment := &struct {
-		Body      string `json:"body,omitempty"`
-		InReplyTo int64  `json:"in_reply_to,omitempty"`
+		Body string `json:"body,omitempty"`
 	}{
-		Body:      body,
-		InReplyTo: commentID,
+		Body: body,
 	}
-	u := fmt.Sprintf("repos/%v/%v/pulls/%d/comments", owner, repo, number)
+	u := fmt.Sprintf("repos/%v/%v/pulls/%d/comments/%s/replies", owner, repo, number, commentID)
 	req, err := s.client.NewRequest("POST", u, comment)
 	if err != nil {
 		return nil, nil, err

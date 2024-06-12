@@ -10,3 +10,7 @@ package atomgit
 //
 // GitHub API docs: https://docs.github.com/rest/actions/
 type ActionsService service
+
+const (
+	ActionStateSynchronized = "synchronized"
+)

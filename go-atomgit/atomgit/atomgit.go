@@ -24,25 +24,27 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/google/go-querystring/query"
 )
 
 const (
-	Version = "v62.0.0"
+	Version = "v0.0.1"
 
-	defaultAPIVersion = "2022-11-28"
-	defaultBaseURL    = "https://api.github.com/"
-	defaultUserAgent  = "go-github" + "/" + Version
+	defaultAPIVersion = "2023-02-21"
+	defaultBaseURL    = "https://api.atomgit.com/"
+	defaultUserAgent  = "go-atomgit" + "/" + Version
 	uploadBaseURL     = "https://uploads.github.com/"
 
-	headerAPIVersion    = "X-GitHub-Api-Version"
+	headerAPIVersion    = "X-AtomGit-Api-Version"
 	headerRateLimit     = "X-RateLimit-Limit"
 	headerRateRemaining = "X-RateLimit-Remaining"
 	headerRateReset     = "X-RateLimit-Reset"
-	headerOTP           = "X-GitHub-OTP"
+	headerOTP           = "X-AtomGit-OTP"
 	headerRetryAfter    = "Retry-After"
 
-	headerTokenExpiration = "GitHub-Authentication-Token-Expiration"
+	headerTokenExpiration = "AtomGit-Authentication-Token-Expiration"
 
 	mediaTypeV3                = "application/vnd.github.v3+json"
 	defaultMediaType           = "application/octet-stream"
@@ -532,6 +534,16 @@ func (c *Client) NewRequest(method, urlStr string, body interface{}, opts ...Req
 		return nil, err
 	}
 
+	t, ok := c.client.Transport.(*oauth2.Transport)
+	if !ok {
+		return nil, errors.New("token error")
+	}
+	k, err := t.Source.Token()
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+k.AccessToken)
+
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -921,6 +933,8 @@ func (c *Client) BareDo(ctx context.Context, req *http.Request) (*Response, erro
 // The provided ctx must be non-nil, if it is nil an error is returned. If it
 // is canceled or times out, ctx.Err() will be returned.
 func (c *Client) Do(ctx context.Context, req *http.Request, v interface{}) (*Response, error) {
+	//req.Header.Set("Authorization", "Bearer " + c.client.Transport)
+	fmt.Println(c.Client().Transport)
 	resp, err := c.BareDo(ctx, req)
 	if err != nil {
 		return resp, err

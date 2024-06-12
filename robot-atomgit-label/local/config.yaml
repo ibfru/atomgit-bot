@@ -1,6 +1,7 @@
 config_items:
   - repos:  #robot需管理的仓库列表
     - ibfuorg/fengchaopub
+    - ibfuorg/fuihdasjhd
 #    - ibforu/community
     clear_labels: # source branch changed 事件发生后 需要移除的标签列表
       - approved

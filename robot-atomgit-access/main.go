@@ -2,6 +2,10 @@ package main
 
 import (
 	"flag"
+	_ "net/http"
+	_ "strconv"
+	"time"
+
 	_ "github.com/opensourceways/community-robot-lib/config"
 	_ "github.com/opensourceways/community-robot-lib/interrupts"
 	"github.com/opensourceways/community-robot-lib/logrusutil"
@@ -10,9 +14,6 @@ import (
 	"github.com/opensourceways/community-robot-lib/secret"
 	_ "github.com/opensourceways/community-robot-lib/utils"
 	"github.com/sirupsen/logrus"
-	_ "net/http"
-	_ "strconv"
-	"time"
 )
 
 type options struct {
@@ -46,11 +47,11 @@ func main() {
 	opt := options{
 		service: liboptions.ServiceOptions{
 			Port:        8822,
-			ConfigFile:  "D:\\Project\\github\\opensourceways\\develop\\atomgit\\robot-gitee-access\\local\\config.yaml",
+			ConfigFile:  "D:\\Project\\github\\ibfru\\atomgit-bot\\robot-atomgit-access\\local\\config.yaml",
 			GracePeriod: 300 * time.Second,
 		},
 		atomgit: liboptions.AtomGitOptions{
-			TokenPath: "D:\\Project\\github\\opensourceways\\develop\\atomgit\\robot-gitee-access\\local\\secret",
+			TokenPath: "D:\\Project\\github\\ibfru\\atomgit-bot\\robot-atomgit-access\\local\\secret",
 		},
 	}
 

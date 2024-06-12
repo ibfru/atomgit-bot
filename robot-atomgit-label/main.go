@@ -2,9 +2,10 @@ package main
 
 import (
 	"flag"
+	"time"
+
 	atomgitclient "github.com/opensourceways/community-robot-lib/atomgitclient"
 	_ "github.com/opensourceways/go-atomgit/atomgit"
-	"time"
 
 	//ss "../go-atomgit"
 	"github.com/opensourceways/community-robot-lib/logrusutil"
@@ -45,11 +46,11 @@ func main() {
 	o := options{
 		service: liboptions.ServiceOptions{
 			Port:        8863,
-			ConfigFile:  "D:\\Project\\github\\opensourceways\\develop\\atomgit\\robot-gitee-label\\local\\config.yaml",
+			ConfigFile:  "D:\\Project\\github\\ibfru\\atomgit-bot\\robot-atomgit-label\\local\\config.yaml",
 			GracePeriod: 300 * time.Second,
 		},
 		atomgit: liboptions.AtomGitOptions{
-			TokenPath: "D:\\Project\\github\\opensourceways\\develop\\atomgit\\robot-gitee-label\\local\\token",
+			TokenPath: "D:\\Project\\github\\ibfru\\atomgit-bot\\robot-atomgit-label\\local\\token",
 		},
 	}
 	if err := o.Validate(); err != nil {

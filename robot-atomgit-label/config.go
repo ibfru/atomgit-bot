@@ -51,7 +51,7 @@ func (c *configuration) SetDefault() {
 
 	Items := c.ConfigItems
 	for i := range Items {
-		Items[i].setDefault()
+		Items[i].SetDefault()
 	}
 }
 
@@ -73,7 +73,7 @@ type botConfig struct {
 	SquashConfig
 }
 
-func (c *botConfig) setDefault() {
+func (c *botConfig) SetDefault() {
 	c.SquashConfig.setDefault()
 }
 
