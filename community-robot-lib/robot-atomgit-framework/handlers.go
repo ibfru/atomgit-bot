@@ -3,30 +3,30 @@ package framework
 import (
 	_ "github.com/opensourceways/community-robot-lib/atomgitclient"
 	"github.com/opensourceways/community-robot-lib/config"
-	sdk "github.com/opensourceways/go-atomgit/atomgit"
+	"github.com/opensourceways/go-atomgit/atomgit"
 	"github.com/sirupsen/logrus"
 )
 
 // AccessHandler defines the function contract for a github.IssuesEvent handler.
-type AccessHandler func(e *sdk.AccessEvent, cfg config.Config, log *logrus.Entry, payload []byte) error
+type AccessHandler func(e *atomgit.AccessEvent, cfg config.Config, log *logrus.Entry, payload []byte) error
 
 // IssueHandler defines the function contract for a github.IssuesEvent handler.
-type IssueHandler func(e *sdk.IssuesEvent, cfg config.Config, log *logrus.Entry) error
+type IssueHandler func(e *atomgit.IssuesEvent, cfg config.Config, log *logrus.Entry) error
 
 // IssueCommentHandler defines the function contract for a github.IssueCommentEvent handler.
-type IssueCommentHandler func(e *sdk.IssueCommentEvent, cfg config.Config, log *logrus.Entry) error
+type IssueCommentHandler func(e *atomgit.IssueCommentEvent, cfg config.Config, log *logrus.Entry) error
 
 // PullRequestHandler defines the function contract for a github.PullRequestEvent handler.
-type PullRequestHandler func(e *sdk.PullRequestEvent, cfg config.Config, log *logrus.Entry) error
+type PullRequestHandler func(e *atomgit.PullRequestEvent, cfg config.Config, log *logrus.Entry) error
 
 // PushEventHandler defines the function contract for a github.PushEvent handler.
-type PushEventHandler func(e *sdk.PushEvent, cfg config.Config, log *logrus.Entry) error
+type PushEventHandler func(e *atomgit.PushEvent, cfg config.Config, log *logrus.Entry) error
 
 // ReviewEventHandler defines the function contract for a github.PullRequestReviewEvent handler.
-type ReviewEventHandler func(e *sdk.PullRequestReviewEvent, cfg config.Config, log *logrus.Entry) error
+type ReviewEventHandler func(e *atomgit.PullRequestReviewEvent, cfg config.Config, log *logrus.Entry) error
 
 // ReviewCommentEventHandler defines the function contract for a github.PullRequestReviewCommentEvent handler.
-type ReviewCommentEventHandler func(e *sdk.PullRequestReviewCommentEvent, cfg config.Config, log *logrus.Entry) error
+type ReviewCommentEventHandler func(e *atomgit.PullRequestReviewCommentEvent, cfg config.Config, log *logrus.Entry) error
 
 type handlers struct {
 	accessHandlers            AccessHandler

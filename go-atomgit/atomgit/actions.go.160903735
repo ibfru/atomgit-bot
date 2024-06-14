@@ -13,5 +13,5 @@ type ActionsService service
 
 const (
 	ActionStateSynchronized = "synchronized"
-	ActionStateCreated      = "created"
+	ActionStateCreated = "created"
 )

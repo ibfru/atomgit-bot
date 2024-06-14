@@ -7,6 +7,8 @@ import (
 // AtomGitOptions holds options for interacting with AtomGit.
 type AtomGitOptions struct {
 	TokenPath      string
+	RepoCacheDir   string
+	CacheRepoOnPV  bool
 	TokenGenerator func() []byte
 }
 

@@ -64,7 +64,6 @@ func main() {
 
 	defer secretAgent.Stop()
 
-	//c := atomgitlib.NewClient(secretAgent.GetTokenGenerator(o.atomgit.TokenPath))
 	c := atomgitclient.NewClient(secretAgent.GetTokenGenerator(o.atomgit.TokenPath))
 	p := newRobot(c)
 
