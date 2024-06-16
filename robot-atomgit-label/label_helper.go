@@ -11,37 +11,48 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-type iRepoLabelHelper interface {
+const (
+	Issue = iota
+	PullRequest
+)
+
+type labelHelper struct {
+	cli                   iClient
+	flag                  int
+	prIssue               *atomgitclient.PRIssue
+	labels                []*atomgit.Label
+	commentator, commitID string
+	add, remove           []string // add labels and remove labels
+}
+
+type iLabelHelper interface {
+	addLabels([]string) error
+	removeLabels([]string) error
+	getCurrentLabels() sets.String
+	addComment(string) error
+
 	getLabelsOfRepo() ([]string, error)
 	isCollaborator(string) (bool, error)
 	createLabelsOfRepo(missing []string) error
 }
 
-type repoLabelHelper struct {
-	cli    iClient
-	org    string
-	repo   string
-	add    []string
-	remove []string
+func (l *labelHelper) isCollaborator(commenter string) (bool, error) {
+	return l.cli.IsCollaborator(l.prIssue, commenter)
 }
 
-func (h *repoLabelHelper) isCollaborator(commenter string) (bool, error) {
-	return h.cli.IsCollaborator(atomgitclient.BuildPRIssue(h.org, h.repo, 0), commenter)
-}
-
-func (h *repoLabelHelper) getLabelsOfRepo() ([]string, error) {
-	labels, err := h.cli.GetRepositoryLabels(atomgitclient.BuildPRIssue(h.org, h.repo, 0))
+func (l *labelHelper) getLabelsOfRepo() ([]string, error) {
+	labels, err := l.cli.GetRepositoryLabels(l.prIssue)
 	if err != nil {
 		return nil, err
 	}
 	return labels, nil
 }
 
-func (h *repoLabelHelper) createLabelsOfRepo(labels []string) error {
+func (l *labelHelper) createLabelsOfRepo(labels []string) error {
 	mErr := utils.MultiError{}
 
-	for _, v := range labels {
-		if err := h.cli.CreateRepoLabel(h.org, h.repo, v); err != nil {
+	for _, lb := range labels {
+		if err := l.cli.CreateRepoLabel(l.prIssue.Org, l.prIssue.Repo, lb); err != nil {
 			mErr.AddError(err)
 		}
 	}
@@ -49,31 +60,15 @@ func (h *repoLabelHelper) createLabelsOfRepo(labels []string) error {
 	return mErr.Err()
 }
 
-type labelHelper interface {
-	addLabels([]string) error
-	removeLabels([]string) error
-	getCurrentLabels() sets.String
-	addComment(string) error
+func (l *labelHelper) addLabels(label []string) error {
+	if l.flag == Issue {
+		return l.cli.AddIssueLabel(l.prIssue, label)
+	}
 
-	iRepoLabelHelper
-}
-
-type issueLabelHelper struct {
-	*repoLabelHelper
-
-	number int
-	labels sets.String
-}
-
-func (h *issueLabelHelper) addLabels(label []string) error {
-	return h.cli.AddIssueLabel(atomgitclient.BuildPRIssue(h.org, h.repo, h.number), label)
-}
-
-func (h *issueLabelHelper) removeLabels(label []string) error {
 	errs := utils.NewMultiErrors()
 	var e error
-	for _, l := range label {
-		e = h.cli.RemoveIssueLabel(atomgitclient.BuildPRIssue(h.org, h.repo, h.number), l)
+	for _, lb := range label {
+		e = l.cli.AddPRLabel(l.prIssue, lb)
 		if e != nil {
 			errs.AddError(e)
 		}
@@ -81,29 +76,16 @@ func (h *issueLabelHelper) removeLabels(label []string) error {
 	return errs.Err()
 }
 
-func (h *issueLabelHelper) getCurrentLabels() sets.String {
-	return h.labels
-}
-
-func (h *issueLabelHelper) addComment(comment string) error {
-
-	return h.cli.CreateIssueComment(atomgitclient.BuildPRIssue(h.org, h.repo, h.number), comment)
-}
-
-type prLabelHelper struct {
-	*repoLabelHelper
-
-	number    int
-	labels    []*atomgit.Label
-	commenter string
-	commitID  string
-}
-
-func (h *prLabelHelper) addLabels(label []string) error {
+func (l *labelHelper) removeLabels(label []string) error {
 	errs := utils.NewMultiErrors()
 	var e error
-	for _, l := range label {
-		e = h.cli.AddPRLabel(atomgitclient.BuildPRIssue(h.org, h.repo, h.number), l)
+	for _, lb := range label {
+		if l.flag == Issue {
+			e = l.cli.RemoveIssueLabel(l.prIssue, lb)
+		} else {
+			e = l.cli.RemovePRLabel(l.prIssue, lb)
+		}
+
 		if e != nil {
 			errs.AddError(e)
 		}
@@ -111,28 +93,20 @@ func (h *prLabelHelper) addLabels(label []string) error {
 	return errs.Err()
 }
 
-func (h *prLabelHelper) removeLabels(label []string) error {
-	errs := utils.NewMultiErrors()
-	var e error
-	for _, l := range label {
-		e = h.cli.RemovePRLabel(atomgitclient.BuildPRIssue(h.org, h.repo, h.number), l)
-		if e != nil {
-			errs.AddError(e)
-		}
-	}
-	return errs.Err()
-}
-
-func (h *prLabelHelper) getCurrentLabels() sets.String {
+func (l *labelHelper) getCurrentLabels() sets.String {
 	s := sets.String{}
-	for _, l := range h.labels {
-		s.Insert(*l.Name)
+	for _, lb := range l.labels {
+		s.Insert(*lb.Name)
 	}
 	return s
 }
 
-func (h *prLabelHelper) addComment(comment string) error {
-	return h.cli.CreatePRCommentReply(atomgitclient.BuildPRIssue(h.org, h.repo, h.number), comment, h.commitID)
+func (l *labelHelper) addComment(comment string) error {
+	if l.flag == Issue {
+		return l.cli.CreateIssueComment(l.prIssue, comment)
+	} else {
+		return l.cli.CreatePRCommentReply(l.prIssue, comment, l.commitID)
+	}
 }
 
 type labelSet struct {

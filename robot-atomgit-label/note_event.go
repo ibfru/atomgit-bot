@@ -9,37 +9,37 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-func (bot *robot) handlePullRequestLabels(
-	lh *prLabelHelper,
+func (bot *robot) handleLabelsByComment(
+	lh *labelHelper,
 	cfg *botConfig,
 	log *logrus.Entry,
 ) error {
 
-	//add := newLabelSet(lh.repoLabelHelper.add)
-	//remove := newLabelSet(lh.repoLabelHelper.remove)
-	//if v := add.intersection(remove); len(v) > 0 {
-	//	return lh.addComment(fmt.Sprintf(
-	//		"conflict labels(%s) exit", strings.Join(add.origin(v), ", "),
-	//	))
-	//}
+	add := newLabelSet(lh.add)
+	remove := newLabelSet(lh.remove)
+	if v := add.intersection(remove); len(v) > 0 {
+		return lh.addComment(fmt.Sprintf(
+			"conflict labels(%s) exit", strings.Join(add.origin(v), ", "),
+		))
+	}
 
 	return lh.addComment("label created successful.")
 
-	//merr := utils.NewMultiErrors()
-	//
-	//if remove.count() > 0 {
-	//	if _, err := removeLabels(lh, remove); err != nil {
-	//		merr.AddError(err)
-	//	}
-	//}
-	//
-	//if add.count() > 0 {
-	//	err := addLabels(lh, add, lh.commenter, cfg, log)
-	//	if err != nil {
-	//		merr.AddError(err)
-	//	}
-	//}
-	//return merr.Err()
+	merr := utils.NewMultiErrors()
+
+	if remove.count() > 0 {
+		if _, err := lh.filterRemoveLabels(remove); err != nil {
+			merr.AddError(err)
+		}
+	}
+
+	if add.count() > 0 {
+		err := filterAddLabels(lh, add, lh.commenter, cfg, log)
+		if err != nil {
+			merr.AddError(err)
+		}
+	}
+	return merr.Err()
 }
 
 func addLabels(lh labelHelper, toAdd *labelSet, commenter string, cfg *botConfig, log *logrus.Entry) error {
@@ -116,18 +116,18 @@ func checkLabelsToAdd(
 	return canAdd, missing, nil
 }
 
-func removeLabels(lh labelHelper, toRemove *labelSet) ([]string, error) {
-	v, err := lh.getLabelsOfRepo()
+func (l *labelHelper) filterRemoveLabels(toRemove *labelSet) ([]string, error) {
+	v, err := l.getLabelsOfRepo()
 	if err != nil {
 		return nil, err
 	}
 	repoLabels := newLabelSet(v)
 
-	ls := lh.getCurrentLabels().Intersection(sets.NewString(
+	ls := l.getCurrentLabels().Intersection(sets.NewString(
 		repoLabels.origin(toRemove.toList())...)).UnsortedList()
 
 	if len(ls) == 0 {
 		return nil, nil
 	}
-	return ls, lh.removeLabels(ls)
+	return ls, l.removeLabels(ls)
 }

@@ -81,6 +81,32 @@ func (bot *robot) RegisterEventHandler(f framework.HandlerRegister) {
 func (bot *robot) handleIssueComment(e *atomgit.IssueCommentEvent, cfg config.Config, log *logrus.Entry) error {
 	// TODO atomgit 上 Issue comment event 不触发 webhook
 
+	org, repo := e.GetRepo().GetOrgAndRepo()
+	bc, err := bot.getConfig(cfg, org, repo)
+	if err != nil {
+		return err
+	}
+
+	toAdd, toRemove := getMatchedLabels(e.GetComment().GetBody())
+	if len(toAdd) == 0 && len(toRemove) == 0 {
+		log.Debug("invalid comment, skipping.")
+		return nil
+	}
+
+	lh := &issueLabelHelper{
+		number:    e.GetIssue().GetNumber(),
+		labels:    e.GetIssue().GetLabels(),
+		commenter: e.GetComment().GetUser().GetLogin(),
+		commitID:  e.GetComment().GetCommitID(),
+		repoLabelHelper: &repoLabelHelper{
+			cli:    &bot.cli,
+			org:    org,
+			repo:   repo,
+			add:    toAdd,
+			remove: toRemove,
+		},
+	}
+
 	return nil
 }
 
@@ -107,7 +133,7 @@ func (bot *robot) handleReviewComment(e *atomgit.PullRequestReviewCommentEvent, 
 	//fmt.Printf("%+v", res)
 
 	org, repo := e.GetRepo().GetOrgAndRepo()
-	botConfig, err := bot.getConfig(cfg, org, repo)
+	bc, err := bot.getConfig(cfg, org, repo)
 	if err != nil {
 		return err
 	}
@@ -118,20 +144,17 @@ func (bot *robot) handleReviewComment(e *atomgit.PullRequestReviewCommentEvent, 
 		return nil
 	}
 
-	lh := &prLabelHelper{
-		number:    e.GetPullRequest().GetNumber(),
-		labels:    e.GetPullRequest().GetLabels(),
-		commenter: e.GetComment().GetUser().GetLogin(),
-		commitID:  e.GetComment().GetCommitID(),
-		repoLabelHelper: &repoLabelHelper{
-			cli:    bot.cli,
-			org:    org,
-			repo:   repo,
-			add:    toAdd,
-			remove: toRemove,
-		},
+	lh := &labelHelper{
+		cli:         bot.cli,
+		flag:        PullRequest,
+		prIssue:     atomgitclient.BuildPRIssue(org, repo, e.GetPullRequest().GetNumber()),
+		labels:      e.GetPullRequest().GetLabels(),
+		commentator: e.GetComment().GetUser().GetLogin(),
+		commitID:    e.GetComment().GetCommitID(),
+		add:         toAdd,
+		remove:      toRemove,
 	}
-	return bot.handlePullRequestLabels(lh, botConfig, log)
+	return bot.handleLabelsByComment(lh, bc, log)
 }
 
 func (bot *robot) handlePullRequest(e *atomgit.PullRequestEvent, cfg config.Config, log *logrus.Entry) error {

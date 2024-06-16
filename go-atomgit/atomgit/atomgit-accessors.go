@@ -9598,6 +9598,14 @@ func (i *Issue) GetNumber() int {
 	return *i.Number
 }
 
+// GetLabels returns the Labels field if it's non-nil, zero value otherwise.
+func (i *Issue) GetLabels() []*Label {
+	if i == nil || i.Labels == nil {
+		return nil
+	}
+	return i.Labels
+}
+
 // GetPullRequestLinks returns the PullRequestLinks field.
 func (i *Issue) GetPullRequestLinks() *PullRequestLinks {
 	if i == nil {
