@@ -9,14 +9,12 @@ import (
 	"regexp"
 	"strings"
 
+	cache "github.com/opensourceways/atomgit-sig-file-cache/sdk"
 	"github.com/opensourceways/community-robot-lib/atomgitclient"
-
 	"github.com/opensourceways/community-robot-lib/config"
 	framework "github.com/opensourceways/community-robot-lib/robot-atomgit-framework"
 	"github.com/opensourceways/community-robot-lib/utils"
 	"github.com/opensourceways/go-atomgit/atomgit"
-	"github.com/opensourceways/repo-file-cache/models"
-	cache "github.com/opensourceways/repo-file-cache/sdk"
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/yaml"
@@ -93,7 +91,20 @@ func (bot *robot) RegisterEventHandler(f framework.HandlerRegister) {
 	f.RegisterPullRequestHandler(bot.handlePullRequest)
 }
 
-func (bot *robot) handlePREvent(e *atomgit.PullRequestEvent, pc config.Config, log *logrus.Entry) error {
+const (
+	Issue = iota
+	PullRequest
+)
+
+type param struct {
+	prIssue *atomgitclient.PRIssue
+	cnf     *botConfig
+	log     *logrus.Entry
+	flag    int
+	author  string
+}
+
+func (bot *robot) handlePullRequest(e *atomgit.PullRequestEvent, pc config.Config, log *logrus.Entry) error {
 	if e.GetAction() != atomgit.ActionStateCreated {
 		return nil
 	}
@@ -104,20 +115,15 @@ func (bot *robot) handlePREvent(e *atomgit.PullRequestEvent, pc config.Config, l
 		return err
 	}
 
-	number := e.GetPRNumber()
+	p := &param{
+		flag:    PullRequest,
+		prIssue: atomgitclient.BuildPRIssue(org, repo, e.GetPullRequest().GetNumber()),
+		author:  e.GetPullRequest().GetUser().GetLogin(),
+		cnf:     cfg,
+		log:     log,
+	}
 
-	return bot.handle(
-		org, repo, e.GetPRAuthor(), cfg, log,
-
-		func(c string) error {
-			return bot.cli.CreatePRComment(org, repo, number, c)
-		},
-
-		func(label string) error {
-			return bot.cli.AddPRLabel(org, repo, number, label)
-		},
-		number,
-	)
+	return bot.handle(p)
 }
 
 func (bot *robot) handleIssue(e *atomgit.IssuesEvent, pc config.Config, log *logrus.Entry) error {
@@ -131,32 +137,21 @@ func (bot *robot) handleIssue(e *atomgit.IssuesEvent, pc config.Config, log *log
 		return err
 	}
 
-	author := e.GetIssue().GetUser().GetLogin()
-	number := e.GetIssue().GetNumber()
+	p := &param{
+		flag:    Issue,
+		prIssue: atomgitclient.BuildPRIssue(org, repo, e.GetIssue().GetNumber()),
+		author:  e.GetIssue().GetUser().GetLogin(),
+		cnf:     cfg,
+		log:     log,
+	}
 
-	return bot.handle(
-		org, repo, author, cfg, log,
-
-		func(c string) error {
-			return bot.cli.CreateIssueComment(atomgitclient.BuildPRIssue(org, repo, number), c)
-		},
-
-		func(label string) error {
-			return bot.cli.AddIssueLabel(atomgitclient.BuildPRIssue(org, repo, number), []string{label})
-		},
-		0,
-	)
+	return bot.handle(p)
 }
 
-func (bot *robot) handle(
-	org, repo, author string,
-	cfg *botConfig, log *logrus.Entry,
-	addMsg, addLabel func(string) error,
-	number int,
-) error {
+func (bot *robot) handle(p *param) error {
 	mErr := utils.NewMultiErrors()
-	if number > 0 {
-		resp, err := http.Get(fmt.Sprintf("https://ipb.osinfra.cn/pulls?author=%s", author))
+	if p.flag == PullRequest {
+		resp, err := http.Get(fmt.Sprintf("https://ipb.osinfra.cn/pulls?author=%s", p.author))
 		if err != nil {
 			mErr.AddError(err)
 		}
@@ -175,18 +170,23 @@ func (bot *robot) handle(
 		}
 
 		if t.Total == 0 {
-			if err = bot.cli.AddPRLabel(atomgitclient.BuildPRIssue(org, repo, number), "newcomer"); err != nil {
+			if err = bot.cli.AddPRLabel(p.prIssue, "newcomer"); err != nil {
 				mErr.AddError(err)
 			}
 		}
 	}
 
-	sigName, comment, err := bot.genComment(org, repo, author, cfg, log, number)
+	sigName, comment, err := bot.genComment(p)
 	if err != nil {
 		return err
 	}
 
-	if err := addMsg(comment); err != nil {
+	if p.flag == Issue {
+		err = bot.cli.CreateIssueComment(p.prIssue, comment)
+	} else {
+		err = bot.cli.CreatePRComment(p.prIssue, comment)
+	}
+	if err != nil {
 		mErr.AddError(err)
 	}
 
@@ -195,160 +195,130 @@ func (bot *robot) handle(
 		label = label[:n]
 	}
 
-	if err := bot.createLabelIfNeed(org, repo, label); err != nil {
-		log.Errorf("create repo label:%s, err:%s", label, err.Error())
+	if err = bot.createLabelIfNeed(p.prIssue, label); err != nil {
+		p.log.Errorf("create repo label:%s, err:%s", label, err.Error())
 	}
 
-	if err := addLabel(label); err != nil {
+	if p.flag == Issue {
+		err = bot.cli.AddIssueLabel(p.prIssue, []string{label})
+	} else {
+		err = bot.cli.AddPRLabel(p.prIssue, label)
+	}
+	if err != nil {
 		mErr.AddError(err)
 	}
 
 	return mErr.Err()
 }
 
-func (bot *robot) genComment(org, repo, author string, cfg *botConfig, log *logrus.Entry, number int) (string, string, error) {
-	sigName, err := bot.getSigOfRepo(org, repo, cfg)
+func (bot *robot) genComment(p *param) (string, string, error) {
+	sigName, err := bot.getSigOfRepo(p.prIssue.Org, p.prIssue.Repo)
 	if err != nil {
 		return "", "", err
 	}
 
 	if sigName == "" {
-		return "", "", fmt.Errorf("cant get sig name of repo: %s/%s", org, repo)
+		return "", "", fmt.Errorf("cant get sig name of repo: %s/%s", p.prIssue.Org, p.prIssue.Repo)
 	}
 
-	if cfg.NoNeedToNotice {
+	if p.cnf.NoNeedToNotice {
 		return sigName, fmt.Sprintf(
-				welcomeMessage3, author, cfg.CommunityName, cfg.CommandLink, sigName, sigName),
+				welcomeMessage3, p.author, p.cnf.CommunityName, p.cnf.CommandLink, sigName, sigName),
 			nil
 	}
 
-	// TODO use mongodb
-	maintainers, committers, err := bot.getMaintainers(org, repo, sigName, number, cfg, log)
+	// TODO use service
+	maintainers, committers, err := bot.getMaintainers(sigName, p)
 	if err != nil {
 		return "", "", err
 	}
 
-	if cfg.NeedAssign && number != 0 {
-		if err = bot.cli.AssignPR(atomgitclient.BuildPRIssue(org, repo, number), maintainers); err != nil {
+	if p.cnf.NeedAssign && p.prIssue.Number != 0 {
+		if err = bot.cli.AssignPR(p.prIssue, maintainers); err != nil {
 			return "", "", err
 		}
 	}
 
 	if len(committers) != 0 {
 		return sigName, fmt.Sprintf(
-			welcomeMessage2, author, cfg.CommunityName, cfg.CommandLink,
+			welcomeMessage2, p.author, p.cnf.CommunityName, p.cnf.CommandLink,
 			sigName, sigName, strings.Join(maintainers, " , @"), strings.Join(committers, " , @"),
 		), nil
 	}
 
 	return sigName, fmt.Sprintf(
-		welcomeMessage, author, cfg.CommunityName, cfg.CommandLink,
+		welcomeMessage, p.author, p.cnf.CommunityName, p.cnf.CommandLink,
 		sigName, sigName, strings.Join(maintainers, " , @"),
 	), nil
 }
 
-func (bot *robot) getMaintainers(org, repo, sigName string, number int, cfg *botConfig, log *logrus.Entry) ([]string, []string, error) {
-	if cfg.WelcomeSimpler {
-		membersToContact, err := bot.findSpecialContact(org, repo, number, cfg, log)
-		if err == nil && len(membersToContact) != 0 {
+func (bot *robot) getMaintainers(sigName string, p *param) ([]string, []string, error) {
+	if p.cnf.WelcomeSimpler {
+		membersToContact, err := bot.findSpecialContact(p)
+		if err == nil && len(*membersToContact) != 0 {
 			return membersToContact.UnsortedList(), nil, nil
 		}
 	}
 
-	v, err := bot.cli.ListCollaborators(org, repo)
+	users, err := bot.cli.ListCollaborator(p.prIssue)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	r := make([]string, 0, len(v))
-	for i := range v {
-		p := v[i].Permissions
-		if p != nil && (p.Admin || p.Push) {
-			r = append(r, v[i].Login)
+	uLen := len(users)
+	r := make([]string, 0, uLen)
+	var uTmp map[string]bool
+	for i := 0; i < uLen; i++ {
+		uTmp = users[i].Permissions
+		if uTmp != nil && (uTmp["Admin"] || uTmp["Push"]) {
+			r = append(r, *users[i].Login)
 		}
 	}
 
-	f, err := bot.getFiles("ibforuorg", "test_org", "master", "OWNERS")
-	if len(f.Files) != 0 {
-		return r, nil, err
-	}
+	// when OWNERS file exists, collaborators as maintainers, committers set empty
 
-	s, err := bot.getFiles("ibforuorg", "test_org", "master", "sig-info.yaml")
-	if len(s.Files) == 0 {
-		return r, nil, err
-	}
+	// when sig-info.yaml file not exists, Collaborators as maintainers, committers set empty
 
-	for _, v := range s.Files {
-		p := v.Path.FullPath()
-		if !strings.Contains(p, sigName) {
-			continue
-		}
-		maintainers, committers := decodeSigInfoFile(v.Content)
-		return maintainers.UnsortedList(), committers.UnsortedList(), nil
-	}
+	// when sig-info.yaml file exists, get maintainers and committers from service[sig-info-cache]
 
 	return r, nil, nil
 }
 
-func (bot *robot) createLabelIfNeed(org, repo, label string) error {
-	repoLabels, err := bot.cli.GetRepoLabels(org, repo)
+func (bot *robot) createLabelIfNeed(pris *atomgitclient.PRIssue, label string) error {
+	repoLabels, err := bot.cli.GetRepositoryLabels(pris)
 	if err != nil {
 		return err
 	}
 
 	for _, v := range repoLabels {
-		if v.Name == label {
+		if v == label {
 			return nil
 		}
 	}
 
-	return bot.cli.CreateRepoLabel(org, repo, label, "")
+	return bot.cli.CreateRepoLabel(pris.Org, pris.Repo, label)
 }
 
-func (bot *robot) getFiles(org, repo, branch, fileName string) (models.FilesInfo, error) {
-	files, err := bot.cacheCli.GetFiles(
-		models.Branch{
-			Platform: "gitee",
-			Org:      org,
-			Repo:     repo,
-			Branch:   branch,
-		},
-		fileName, false,
-	)
-	if err != nil {
-		return models.FilesInfo{}, err
-	}
-
-	if len(files.Files) == 0 {
-		return models.FilesInfo{}, nil
-	}
-
-	return files, nil
-}
-
-func (bot *robot) findSpecialContact(org, repo string, number int, cfg *botConfig, log *logrus.Entry) (sets.String, error) {
-	if number == 0 {
+func (bot *robot) findSpecialContact(p *param) (*sets.Set[string], error) {
+	if p.prIssue.Number == 0 {
 		return nil, nil
 	}
 
-	changes, err := bot.cli.GetPullRequestChanges(org, repo, number)
+	changes, err := bot.cli.GetPullRequestChanges(p.prIssue)
 	if err != nil {
-		log.Errorf("get pr changes failed: %v", err)
+		p.log.Errorf("get pr changes failed: %v", err)
 		return nil, err
 	}
 
-	filePath := cfg.FilePath
-	branch := cfg.FileBranch
-
-	content, err := bot.cli.GetPathContent(org, repo, filePath, branch)
+	content, err := bot.cli.GetPathContent(p.prIssue.Org, p.prIssue.Repo, p.cnf.FilePath, p.cnf.FileBranch)
 	if err != nil {
-		log.Errorf("get file %s/%s/%s failed, err: %v", org, repo, filePath, err)
+		p.log.Errorf("get file %s/%s/%s failed, err: %v", p.prIssue.Org, p.prIssue.Repo, p.cnf.FilePath, err)
 		return nil, err
 	}
 
-	c, err := base64.StdEncoding.DecodeString(content.Content)
+	c, err := base64.StdEncoding.DecodeString(*content.Content)
 	if err != nil {
-		log.Errorf("decode string err: %v", err)
+		p.log.Errorf("decode string err: %v", err)
 		return nil, err
 	}
 
@@ -356,21 +326,21 @@ func (bot *robot) findSpecialContact(org, repo string, number int, cfg *botConfi
 
 	err = yaml.Unmarshal(c, &r)
 	if err != nil {
-		log.Errorf("yaml unmarshal failed: %v", err)
+		p.log.Errorf("yaml unmarshal failed: %v", err)
 		return nil, err
 	}
 
-	owners := sets.NewString()
+	owners := sets.New[string]()
 	var mo []Maintainer
-	for _, c := range changes {
+	for _, cg := range changes {
 		for _, f := range r.Relations {
 			for _, ff := range f.Path {
-				if strings.Contains(c.Filename, ff) {
+				if strings.Contains(*cg.Filename, ff) {
 					mo = append(mo, f.Owner...)
 				}
 				if strings.Contains(ff, "/*/") {
 					reg := regexp.MustCompile(strings.Replace(ff, "/*/", "/[^\\s]+/", -1))
-					if ok := reg.MatchString(c.Filename); ok {
+					if ok := reg.MatchString(*cg.Filename); ok {
 						mo = append(mo, f.Owner...)
 					}
 				}
@@ -382,5 +352,5 @@ func (bot *robot) findSpecialContact(org, repo string, number int, cfg *botConfi
 		owners.Insert(m.GiteeID)
 	}
 
-	return owners, nil
+	return &owners, nil
 }

@@ -1,8 +1,9 @@
-module sig-info-cache
+module github.com/opensourceways/atomgit-sig-file-cache
 
 go 1.20
 
 require github.com/beego/beego/v2 v2.2.1
+require github.com/opensourceways/server-common-lib v0.0.0-20240206030521-a8e5c88d6816
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -20,5 +21,7 @@ require (
 	golang.org/x/sys v0.19.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	sigs.k8s.io/yaml v1.3.0 // indirect
 )

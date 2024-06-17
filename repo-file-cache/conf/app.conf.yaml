@@ -1,4 +1,0 @@
-mongodb:
-  mongodb_conn: "mongodb://ubthost:27017/"
-  mongodb_db: "robot"
-  files_collection: files

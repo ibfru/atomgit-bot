@@ -7,8 +7,8 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// SigInfos struct.
-type SigInfos struct {
+// SigInfo struct.
+type SigInfo struct {
 	Name         string       `json:"name,omitempty"`
 	Description  string       `json:"description,omitempty"`
 	MailingList  string       `json:"mailing_list,omitempty"`
@@ -67,21 +67,21 @@ type Admin struct {
 	Email        string `json:"email,omitempty"`
 }
 
-func decodeSigInfoFile(content string) (sets.String, sets.String) {
-	maintainers := sets.NewString()
+func decodeSigInfoFile(content string) (*sets.Set[string], *sets.Set[string]) {
+	maintainers := sets.New[string]()
 
 	c, err := base64.StdEncoding.DecodeString(content)
 	if err != nil {
 		return nil, nil
 	}
 
-	var m SigInfos
+	var m SigInfo
 
 	if err = yaml.Unmarshal(c, &m); err != nil {
 		return nil, nil
 	}
 
-	committers := sets.NewString()
+	committers := sets.New[string]()
 
 	for _, v := range m.Maintainers {
 		maintainers.Insert(v.GiteeID)
@@ -93,7 +93,7 @@ func decodeSigInfoFile(content string) (sets.String, sets.String) {
 		}
 	}
 
-	return maintainers, committers
+	return &maintainers, &committers
 }
 
 // Relation struct.

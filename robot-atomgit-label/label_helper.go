@@ -17,11 +17,11 @@ const (
 )
 
 type labelHelper struct {
+	prIssue               *atomgitclient.PRIssue
 	cli                   iClient
 	flag                  int
-	prIssue               *atomgitclient.PRIssue
-	labels                []*atomgit.Label
 	commentator, commitID string
+	labels                []*atomgit.Label
 	add, remove           []string // add labels and remove labels
 }
 

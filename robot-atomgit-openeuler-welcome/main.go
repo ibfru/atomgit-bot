@@ -5,12 +5,12 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/opensourceways/community-robot-lib/giteeclient"
+	cache "github.com/opensourceways/atomgit-sig-file-cache/sdk"
+	"github.com/opensourceways/community-robot-lib/atomgitclient"
 	"github.com/opensourceways/community-robot-lib/logrusutil"
 	liboptions "github.com/opensourceways/community-robot-lib/options"
-	framework "github.com/opensourceways/community-robot-lib/robot-gitee-framework"
+	framework "github.com/opensourceways/community-robot-lib/robot-atomgit-framework"
 	"github.com/opensourceways/community-robot-lib/secret"
-	cache "github.com/opensourceways/repo-file-cache/sdk"
 	"github.com/sirupsen/logrus"
 )
 
@@ -75,10 +75,10 @@ func main() {
 
 	defer secretAgent.Stop()
 
-	c := giteeclient.NewClient(secretAgent.GetTokenGenerator(o.atomgit.TokenPath))
+	c := atomgitclient.NewClient(secretAgent.GetTokenGenerator(o.atomgit.TokenPath))
 	s := cache.NewSDK(o.cacheEndpoint, o.maxRetries)
 
 	p := newRobot(c, s)
 
-	framework.Run(p, o.service)
+	framework.Run(p, o.service, o.atomgit)
 }
