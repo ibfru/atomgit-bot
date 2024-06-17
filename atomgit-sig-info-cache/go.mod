@@ -3,6 +3,7 @@ module github.com/opensourceways/atomgit-sig-file-cache
 go 1.20
 
 require github.com/beego/beego/v2 v2.2.1
+
 require github.com/opensourceways/server-common-lib v0.0.0-20240206030521-a8e5c88d6816
 
 require (
