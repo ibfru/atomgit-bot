@@ -205,7 +205,7 @@ func (s *PullRequestsService) EditComment(ctx context.Context, owner, repo strin
 // GitHub API docs: https://docs.github.com/rest/pulls/comments#delete-a-review-comment-for-a-pull-request
 //
 //meta:operation DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}
-func (s *PullRequestsService) DeleteComment(ctx context.Context, owner, repo string, commentID int64) (*Response, error) {
+func (s *PullRequestsService) DeleteComment(ctx context.Context, owner, repo, commentID string) (*Response, error) {
 	u := fmt.Sprintf("repos/%v/%v/pulls/comments/%d", owner, repo, commentID)
 	req, err := s.client.NewRequest("DELETE", u, nil)
 	if err != nil {

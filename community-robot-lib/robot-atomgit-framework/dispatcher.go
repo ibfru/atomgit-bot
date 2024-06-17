@@ -229,7 +229,7 @@ func parseRequest(w http.ResponseWriter, r *http.Request, getHmac func() []byte)
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			logrus.Warn("when request body close, error occurred:", err)
+			logrus.Warn("when webhook body close, error occurred:", err)
 		}
 	}(r.Body)
 

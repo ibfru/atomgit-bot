@@ -8,9 +8,9 @@ type Client interface {
 	AddPRLabel(pr *PRIssue, label string) error
 	RemovePRLabel(pr *PRIssue, label string) error
 	CreatePRComment(pr *PRIssue, comment string) error
-	DeletePRComment(org, repo string, ID int64) error
+	DeletePRComment(org, repo, commentId string) error
 	GetPRCommits(pr *PRIssue) ([]*atomgit.RepositoryCommit, error)
-	GetPRComments(pr *PRIssue) ([]*atomgit.IssueComment, error)
+	GetPRComments(pr *PRIssue) ([]*atomgit.PullRequestComment, error)
 	UpdatePR(pr *PRIssue, request *atomgit.PullRequest) (*atomgit.PullRequest, error)
 	GetPullRequests(pr *PRIssue) ([]*atomgit.PullRequest, error)
 	ListCollaborator(pr *PRIssue) ([]*atomgit.User, error)

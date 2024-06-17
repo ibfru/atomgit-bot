@@ -73,7 +73,7 @@ func (bot *robot) getConfig(cfg config.Config, org, repo string) (*botConfig, er
 
 func (bot *robot) RegisterEventHandler(f framework.HandlerRegister) {
 	f.RegisterIssueCommentHandler(bot.handleIssueComment)
-	f.RegisterReviewCommentEventHandler(bot.handleReviewComment)
+	f.RegisterReviewCommentEventHandler(bot.handlePullRequestReviewComment)
 	f.RegisterPullRequestHandler(bot.handlePullRequest)
 }
 
@@ -105,7 +105,7 @@ func (bot *robot) handleIssueComment(e *atomgit.IssueCommentEvent, cfg config.Co
 	return bot.handleLabelsByComment(lh, bc, log)
 }
 
-func (bot *robot) handleReviewComment(e *atomgit.PullRequestReviewCommentEvent, cfg config.Config, log *logrus.Entry) error {
+func (bot *robot) handlePullRequestReviewComment(e *atomgit.PullRequestReviewCommentEvent, cfg config.Config, log *logrus.Entry) error {
 
 	org, repo := e.GetRepo().GetOrgAndRepo()
 	bc, err := bot.getConfig(cfg, org, repo)

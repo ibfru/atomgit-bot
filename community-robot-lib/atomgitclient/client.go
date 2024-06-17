@@ -66,20 +66,20 @@ func (cl client) CreatePRCommentReply(pr *PRIssue, comment, commentID string) er
 	return err
 }
 
-func (cl client) DeletePRComment(org, repo string, commentId int64) error {
-	_, err := cl.c.Issues.DeleteComment(context.Background(), org, repo, commentId)
+func (cl client) DeletePRComment(org, repo, commentId string) error {
+	_, err := cl.c.PullRequests.DeleteComment(context.Background(), org, repo, commentId)
 
 	return err
 }
 
-func (cl client) GetPRComments(pr *PRIssue) ([]*atomgit.IssueComment, error) {
-	comments := []*atomgit.IssueComment{}
+func (cl client) GetPRComments(pr *PRIssue) ([]*atomgit.PullRequestComment, error) {
+	comments := []*atomgit.PullRequestComment{}
 
-	opt := &atomgit.IssueListCommentsOptions{}
+	opt := &atomgit.PullRequestListCommentsOptions{}
 	opt.Page = 1
 
 	for {
-		v, resp, err := cl.c.Issues.ListComments(context.Background(), pr.Org, pr.Repo, pr.Number, opt)
+		v, resp, err := cl.c.PullRequests.ListComments(context.Background(), pr.Org, pr.Repo, pr.Number, opt)
 		if err != nil {
 			return comments, err
 		}

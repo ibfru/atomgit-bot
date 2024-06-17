@@ -120,9 +120,9 @@ func (d *accessDispatcher) forwardTo(req *http.Request) error {
 	}
 
 	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			logrus.Warn("when request body close, error occurred:", err)
+		e := Body.Close()
+		if e != nil {
+			logrus.Warn("when access received downstream response body close, error occurred:", e)
 		}
 	}(resp.Body)
 
