@@ -23,8 +23,6 @@ func (bot *robot) handleLabelsByComment(
 		))
 	}
 
-	return lh.addComment("label created successful.")
-
 	merr := utils.NewMultiErrors()
 
 	if remove.count() > 0 {
@@ -34,7 +32,7 @@ func (bot *robot) handleLabelsByComment(
 	}
 
 	if add.count() > 0 {
-		err := filterAddLabels(lh, add, lh.commenter, cfg, log)
+		err := lh.filterAddLabels(add, lh.commentator, cfg, log)
 		if err != nil {
 			merr.AddError(err)
 		}
@@ -42,8 +40,8 @@ func (bot *robot) handleLabelsByComment(
 	return merr.Err()
 }
 
-func addLabels(lh labelHelper, toAdd *labelSet, commenter string, cfg *botConfig, log *logrus.Entry) error {
-	canAdd, missing, err := checkLabelsToAdd(lh, toAdd, commenter, cfg, log)
+func (l *labelHelper) filterAddLabels(toAdd *labelSet, commentator string, cfg *botConfig, log *logrus.Entry) error {
+	canAdd, missing, err := l.checkLabelsToAdd(toAdd, commentator, cfg, log)
 	if err != nil {
 		return err
 	}
@@ -51,9 +49,9 @@ func addLabels(lh labelHelper, toAdd *labelSet, commenter string, cfg *botConfig
 	merr := utils.NewMultiErrors()
 
 	if len(canAdd) > 0 {
-		ls := sets.NewString(canAdd...).Difference(lh.getCurrentLabels())
+		ls := sets.NewString(canAdd...).Difference(l.getCurrentLabels())
 		if ls.Len() > 0 {
-			if err := lh.addLabels(ls.UnsortedList()); err != nil {
+			if err := l.addLabels(ls.UnsortedList()); err != nil {
 				merr.AddError(err)
 			}
 		}
@@ -65,7 +63,7 @@ func addLabels(lh labelHelper, toAdd *labelSet, commenter string, cfg *botConfig
 			strings.Join(missing, ", "),
 		)
 
-		if err := lh.addComment(msg); err != nil {
+		if err = l.addComment(msg); err != nil {
 			merr.AddError(err)
 		}
 	}
@@ -73,14 +71,13 @@ func addLabels(lh labelHelper, toAdd *labelSet, commenter string, cfg *botConfig
 	return merr.Err()
 }
 
-func checkLabelsToAdd(
-	h labelHelper,
+func (l *labelHelper) checkLabelsToAdd(
 	toAdd *labelSet,
-	commenter string,
+	commentator string,
 	cfg *botConfig,
 	log *logrus.Entry,
 ) ([]string, []string, error) {
-	v, err := h.getLabelsOfRepo()
+	v, err := l.getLabelsOfRepo()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -102,13 +99,13 @@ func checkLabelsToAdd(
 		return canAdd, missing, nil
 	}
 
-	b, err := h.isCollaborator(commenter)
+	b, err := l.isCollaborator(commentator)
 	if err != nil {
 		return nil, nil, err
 	}
 	if b {
-		if err := h.createLabelsOfRepo(missing); err != nil {
-			log.Error(err)
+		if e := l.createLabelsOfRepo(missing); e != nil {
+			log.Error(e)
 		}
 
 		return append(canAdd, missing...), nil, nil
@@ -130,4 +127,59 @@ func (l *labelHelper) filterRemoveLabels(toRemove *labelSet) ([]string, error) {
 		return nil, nil
 	}
 	return ls, l.removeLabels(ls)
+}
+
+func (bot *robot) clearLabelCaseByPRCodeUpdate(lh *labelHelper, cfg *botConfig) error {
+	//if sdk.GetPullRequestAction(e) != sdk.PRActionChangedSourceBranch {
+	//	return nil
+	//}
+
+	labels := lh.getCurrentLabels()
+	toRemove := getClearLabels(labels, cfg)
+	if len(toRemove) == 0 {
+		return nil
+	}
+
+	errs := utils.NewMultiErrors()
+	var e error
+	for _, lb := range toRemove {
+		e = bot.cli.RemovePRLabel(lh.prIssue, lb)
+		if e != nil {
+			errs.AddError(e)
+		}
+	}
+	if errs != nil {
+		return errs.Err()
+	}
+
+	comment := fmt.Sprintf(
+		"This pull request source branch has changed, so removes the following label(s): %s.",
+		strings.Join(toRemove, ", "),
+	)
+
+	return bot.cli.CreatePRComment(lh.prIssue, comment)
+}
+
+func getClearLabels(labels sets.String, cfg *botConfig) []string {
+	var r []string
+
+	all := labels
+	if len(cfg.ClearLabels) > 0 {
+		v := all.Intersection(sets.NewString(cfg.ClearLabels...))
+		if v.Len() > 0 {
+			r = v.UnsortedList()
+			all = all.Difference(v)
+		}
+	}
+
+	exp := cfg.clearLabelsByRegexp
+	if exp != nil {
+		for k := range all {
+			if exp.MatchString(k) {
+				r = append(r, k)
+			}
+		}
+	}
+
+	return r
 }

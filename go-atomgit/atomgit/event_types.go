@@ -1366,7 +1366,7 @@ type PushEventRepository struct {
 	UpdatedAt        *Timestamp        `json:"updated_at,omitempty"`
 	Homepage         *string           `json:"homepage,omitempty"`
 	PullsURL         *string           `json:"pulls_url,omitempty"`
-	Size             *int              `json:"size,omitempty"`
+	Size             *float64          `json:"size,omitempty"`
 	StargazersCount  *int              `json:"stargazers_count,omitempty"`
 	WatchersCount    *int              `json:"watchers_count,omitempty"`
 	Language         *string           `json:"language,omitempty"`

@@ -17847,7 +17847,7 @@ func (p *PushEventRepository) GetPushedAt() Timestamp {
 }
 
 // GetSize returns the Size field if it's non-nil, zero value otherwise.
-func (p *PushEventRepository) GetSize() int {
+func (p *PushEventRepository) GetSize() float64 {
 	if p == nil || p.Size == nil {
 		return 0
 	}

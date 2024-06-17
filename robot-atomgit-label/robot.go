@@ -2,11 +2,10 @@ package main
 
 import (
 	"fmt"
-	"net/http"
-	"time"
+
+	"github.com/opensourceways/community-robot-lib/utils"
 
 	"github.com/opensourceways/community-robot-lib/atomgitclient"
-
 	"github.com/opensourceways/go-atomgit/atomgit"
 	"github.com/sirupsen/logrus"
 
@@ -78,8 +77,8 @@ func (bot *robot) RegisterEventHandler(f framework.HandlerRegister) {
 	f.RegisterPullRequestHandler(bot.handlePullRequest)
 }
 
+// TODO atomgit 上 Issue comment event 不触发 webhook
 func (bot *robot) handleIssueComment(e *atomgit.IssueCommentEvent, cfg config.Config, log *logrus.Entry) error {
-	// TODO atomgit 上 Issue comment event 不触发 webhook
 
 	org, repo := e.GetRepo().GetOrgAndRepo()
 	bc, err := bot.getConfig(cfg, org, repo)
@@ -93,44 +92,20 @@ func (bot *robot) handleIssueComment(e *atomgit.IssueCommentEvent, cfg config.Co
 		return nil
 	}
 
-	lh := &issueLabelHelper{
-		number:    e.GetIssue().GetNumber(),
-		labels:    e.GetIssue().GetLabels(),
-		commenter: e.GetComment().GetUser().GetLogin(),
-		commitID:  e.GetComment().GetCommitID(),
-		repoLabelHelper: &repoLabelHelper{
-			cli:    &bot.cli,
-			org:    org,
-			repo:   repo,
-			add:    toAdd,
-			remove: toRemove,
-		},
+	lh := &labelHelper{
+		cli:         bot.cli,
+		flag:        PullRequest,
+		prIssue:     atomgitclient.BuildPRIssue(org, repo, e.GetIssue().GetNumber()),
+		labels:      e.GetIssue().GetLabels(),
+		commentator: e.GetComment().GetUser().GetLogin(),
+		commitID:    e.GetComment().GetNodeID(), // TODO
+		add:         toAdd,
+		remove:      toRemove,
 	}
-
-	return nil
-}
-
-type Message struct {
-	CommitId string `json:"commit_id" required:"true"`
-	Body     string `json:"body" required:"true"`
+	return bot.handleLabelsByComment(lh, bc, log)
 }
 
 func (bot *robot) handleReviewComment(e *atomgit.PullRequestReviewCommentEvent, cfg config.Config, log *logrus.Entry) error {
-	//m := Message{e.GetComment().GetCommitID(), "fasjkhghfvdaolkuhsivfdaljhsdvaljhsdvlakjhsdvasd"}
-	//b, err := json.Marshal(m)
-	//
-	//req, err := http.NewRequest(http.MethodPost, "https://api.atomgit.com/repos/ibfuorg/fengchaopub/pulls/1/comments", bytes.NewBuffer(b))
-	//if err != nil {
-	//	fmt.Println("asdsadasdasdasd")
-	//}
-	//
-	//req.Header.Set("Content-Type", "application/json")
-	//req.Header.Set("Authorization", "Bearer atp_0no70zw700cag7v6kc0cm1vvi8lp3qsk")
-	//res, err := do(req)
-	//if err != nil {
-	//	return err
-	//}
-	//fmt.Printf("%+v", res)
 
 	org, repo := e.GetRepo().GetOrgAndRepo()
 	bc, err := bot.getConfig(cfg, org, repo)
@@ -157,29 +132,52 @@ func (bot *robot) handleReviewComment(e *atomgit.PullRequestReviewCommentEvent, 
 	return bot.handleLabelsByComment(lh, bc, log)
 }
 
+// TODO atomgit 上 PR code update event 不触发 webhook
 func (bot *robot) handlePullRequest(e *atomgit.PullRequestEvent, cfg config.Config, log *logrus.Entry) error {
-	// TODO
-	fmt.Println("-------------")
 
-	return nil
-}
-
-func do(req *http.Request) (resp *http.Response, err error) {
-	var tmp = http.DefaultClient
-	if resp, err = tmp.Do(req); err == nil {
-		return
+	org, repo := e.GetRepo().GetOrgAndRepo()
+	bc, err := bot.getConfig(cfg, org, repo)
+	if err != nil {
+		return err
 	}
 
-	maxRetries := 4
-	backoff := 100 * time.Millisecond
+	lh := &labelHelper{
+		cli:     bot.cli,
+		flag:    PullRequest,
+		prIssue: atomgitclient.BuildPRIssue(org, repo, e.GetPullRequest().GetNumber()),
+		labels:  e.GetPullRequest().GetLabels(),
+	}
 
-	for retries := 0; retries < maxRetries; retries++ {
-		time.Sleep(backoff)
-		backoff *= 2
+	errs := utils.NewMultiErrors()
+	if err = bot.clearLabelCaseByPRCodeUpdate(lh, bc); err != nil {
+		errs.AddError(err)
+	}
 
-		if resp, err = tmp.Do(req); err == nil {
-			break
+	if e.GetAction() == atomgit.ActionStateSynchronized {
+		if err = bot.handleSquashLabel(lh, uint(e.GetPullRequest().GetCommits()), bc.SquashConfig); err != nil {
+			errs.AddError(err)
 		}
 	}
-	return
+
+	return errs.Err()
+}
+
+func (bot *robot) handleSquashLabel(lh *labelHelper, commits uint, cfg SquashConfig) error {
+	if cfg.unableCheckingSquash() {
+		return nil
+	}
+
+	labels := lh.getCurrentLabels()
+	hasSquashLabel := labels.Has(cfg.SquashCommitLabel)
+	exceeded := commits > cfg.CommitsThreshold
+
+	if exceeded && !hasSquashLabel {
+		return bot.cli.AddPRLabel(lh.prIssue, cfg.SquashCommitLabel)
+	}
+
+	if !exceeded && hasSquashLabel {
+		return bot.cli.RemovePRLabel(lh.prIssue, cfg.SquashCommitLabel)
+	}
+
+	return nil
 }
