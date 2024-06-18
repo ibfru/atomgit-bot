@@ -27,9 +27,11 @@ type iClient interface {
 	GetPathContent(org, repo, path, branch string) (*atomgit.RepositoryContent, error)
 	GetPullRequestChanges(pr *atomgitclient.PRIssue) ([]*atomgit.CommitFile, error)
 
+	GetSinglePR(pr *atomgitclient.PRIssue) (*atomgit.PullRequest, error)
 	GetPullRequests(pr *atomgitclient.PRIssue) ([]*atomgit.PullRequest, error)
 	MergePR(pr *atomgitclient.PRIssue, commitMessage string, opt *atomgit.PullRequestOptions) error
 	UpdatePR(pr *atomgitclient.PRIssue, request *atomgit.PullRequest) (*atomgit.PullRequest, error)
+	AssignPR(pr *atomgitclient.PRIssue, logins []string) error
 
 	GetPRComments(pr *atomgitclient.PRIssue) ([]*atomgit.PullRequestComment, error)
 	CreatePRComment(pr *atomgitclient.PRIssue, comment string) error
@@ -68,6 +70,27 @@ func (bot *robot) RegisterEventHandler(f framework.HandlerRegister) {
 	f.RegisterPullRequestHandler(bot.handlePullRequest)
 }
 
+type parameter struct {
+	prArg                                                 *atomgitclient.PRIssue
+	realPR                                                *atomgit.PullRequest
+	bcf                                                   *botConfig
+	log                                                   *logrus.Entry
+	commentContent, commentator, commitID, action, author string
+}
+
+type flowFunc func(arg *parameter) error
+
+func handleFlow(p *parameter, flow []flowFunc) error {
+	merr := utils.NewMultiErrors()
+	var err error
+	for i, j := 0, len(flow); i < j; i++ {
+		if err = flow[j](p); err != nil {
+			merr.AddError(err)
+		}
+	}
+	return merr.Err()
+}
+
 func (bot *robot) handlePullRequest(e *atomgit.PullRequestEvent, pc config.Config, log *logrus.Entry) error {
 	org, repo := e.GetRepo().GetOrgAndRepo()
 	cfg, err := bot.getConfig(pc, org, repo)
@@ -75,69 +98,60 @@ func (bot *robot) handlePullRequest(e *atomgit.PullRequestEvent, pc config.Confi
 		return err
 	}
 
-	merr := utils.NewMultiErrors()
-	if err = bot.clearLabel(e); err != nil {
-		merr.AddError(err)
+	p := &parameter{
+		prArg:  atomgitclient.BuildPRIssue(org, repo, e.GetPullRequest().GetNumber()),
+		realPR: e.GetPullRequest(),
+		bcf:    cfg,
+		log:    log,
+		action: e.GetAction(),
+		author: e.GetPullRequest().GetUser().GetLogin(),
 	}
 
-	if err = bot.doRetest(e); err != nil {
-		merr.AddError(err)
-	}
-
-	if err = bot.checkReviewer(e, cfg); err != nil {
-		merr.AddError(err)
-	}
-
-	if err = bot.handleLabelUpdate(e, cfg, log); err != nil {
-		merr.AddError(err)
-	}
-
-	return merr.Err()
+	return handleFlow(
+		p,
+		[]flowFunc{
+			bot.clearLabel,
+			bot.doRetest,
+			bot.checkReviewer,
+			bot.handleLabelUpdate,
+		},
+	)
 }
 
 func (bot *robot) handlePullRequestReviewComment(e *atomgit.PullRequestReviewCommentEvent, pc config.Config, log *logrus.Entry) error {
+	if e.GetAction() != "opened" {
+		return nil
+	}
+
 	org, repo := e.GetRepo().GetOrgAndRepo()
 	cfg, err := bot.getConfig(pc, org, repo)
 	if err != nil {
 		return err
 	}
-
-	merr := utils.NewMultiErrors()
-	if err := bot.handleLGTM(e, cfg, log); err != nil {
-		merr.AddError(err)
+	p := &parameter{
+		prArg:          atomgitclient.BuildPRIssue(org, repo, e.GetPullRequest().GetNumber()),
+		realPR:         e.GetPullRequest(),
+		bcf:            cfg,
+		log:            log,
+		commentContent: e.GetComment().GetBody(),
+		commentator:    e.GetComment().GetUser().GetLogin(),
+		commitID:       e.GetComment().GetCommitID(),
+		action:         e.GetAction(),
+		author:         e.GetPullRequest().GetUser().GetLogin(),
 	}
 
-	if err = bot.handleApprove(e, cfg, log); err != nil {
-		merr.AddError(err)
-	}
-
-	if err = bot.handleCheckPR(e, cfg, log); err != nil {
-		merr.AddError(err)
-	}
-
-	if err = bot.removeInvalidCLA(e, cfg, log); err != nil {
-		merr.AddError(err)
-	}
-
-	if err = bot.handleRebase(e, cfg, log); err != nil {
-		merr.AddError(err)
-	}
-
-	if err = bot.handleFlattened(e, cfg, log); err != nil {
-		merr.AddError(err)
-	}
-
-	if err = bot.removeRebase(e, cfg, log); err != nil {
-		merr.AddError(err)
-	}
-
-	if err = bot.removeFlattened(e, cfg, log); err != nil {
-		merr.AddError(err)
-	}
-
-	if err = bot.handleACK(e, cfg, log); err != nil {
-		merr.AddError(err)
-	}
-
-	return merr.Err()
+	return handleFlow(
+		p,
+		[]flowFunc{
+			bot.handleLGTM,
+			bot.handleApprove,
+			bot.handleCheckPR,
+			bot.removeInvalidCLA,
+			bot.handleRebase,
+			bot.handleFlattened,
+			bot.removeRebase,
+			bot.removeFlattened,
+			bot.handleACK,
+		},
+	)
 }

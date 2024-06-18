@@ -3,15 +3,11 @@ package main
 import (
 	"encoding/base64"
 	"fmt"
-	"reflect"
-	"strings"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/yaml"
 
 	"github.com/sirupsen/logrus"
-
-	"github.com/opensourceways/go-atomgit/atomgit"
 )
 
 // CheckBranchKeeper will return format and eg: true, true, error
@@ -19,46 +15,7 @@ import (
 // true, true, nil: The approved commenter in branch keeper list
 // false, true, nil: The approved commenter not in branch keeper list
 // false, false, nil: The sig-info.yaml is not setting branch keeper
-func (bot *robot) CheckBranchKeeper(
-	org, repo, commenter string,
-	pr *atomgit.PullRequest,
-	cfg *botConfig,
-	log *logrus.Entry,
-) (bool, bool, error) {
-	if reflect.DeepEqual(cfg.BranchKeeper, branchKeeper{}) {
-		return false, false, nil
-	}
-
-	sigInfoFiles, err := bot.getFiles(
-		cfg.BranchKeeper.Owner,
-		cfg.BranchKeeper.Repo,
-		cfg.BranchKeeper.Branch,
-		sigInfoFile,
-		log,
-	)
-
-	if err != nil {
-		return false, false, err
-	}
-
-	keepBranches := make(map[string]sets.String)
-	fullPath := fmt.Sprintf(`%s/%s/%s`, org, repo, pr.GetBase().GetRef())
-
-	for _, file := range sigInfoFiles.Files {
-		if strings.HasPrefix(file.Path.FullPath(), "archived_sigs/") {
-			continue
-		}
-
-		decodeKeepBranchFile(file.Content, keepBranches, log)
-	}
-
-	if value, exist := keepBranches[fullPath]; exist {
-		if value.Has(commenter) {
-			return true, true, nil
-		}
-
-		return false, true, nil
-	}
+func (bot *robot) CheckBranchKeeper(p *parameter) (bool, bool, error) {
 
 	return false, false, nil
 }

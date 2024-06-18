@@ -16334,6 +16334,20 @@ func (p *PullRequest) GetState() string {
 	return *p.State
 }
 
+// GetNeedReview
+func (p *PullRequest) GetNeedReview() (int, []string) {
+	if p == nil || p.RequestedReviewers == nil || len(p.RequestedReviewers) == 0 {
+		return 0, nil
+	}
+
+	j := len(p.RequestedReviewers)
+	arr := make([]string, j)
+	for i := 0; i < j; i++ {
+		arr[i] = *p.RequestedReviewers[i].Login
+	}
+	return j, arr
+}
+
 // GetStatusesURL returns the StatusesURL field if it's non-nil, zero value otherwise.
 func (p *PullRequest) GetStatusesURL() string {
 	if p == nil || p.StatusesURL == nil {

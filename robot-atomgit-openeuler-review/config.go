@@ -75,8 +75,8 @@ type botConfig struct {
 	// The default value is 1 which means the lgtm label is itself.
 	LgtmCountsRequired uint `json:"lgtm_counts_required,omitempty"`
 
-	// CheckPermissionBasedOnSigOwners means it should check the devepler's permission
-	// besed on the owners file in sig directory when the developer comment /lgtm or /approve
+	// CheckPermissionBasedOnSigOwners means it should check the developer's permission
+	// based on the owners file in sig directory when the developer comment /lgtm or /approve
 	// command. The repository is 'tc' at present.
 	CheckPermissionBasedOnSigOwners bool `json:"check_permission_based_on_sig_owners,omitempty"`
 

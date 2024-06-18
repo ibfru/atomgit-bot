@@ -3,9 +3,6 @@ package main
 import (
 	"fmt"
 	"regexp"
-
-	"github.com/opensourceways/go-atomgit/atomgit"
-	"github.com/sirupsen/logrus"
 )
 
 const approvedLabel = "approved"
@@ -15,105 +12,81 @@ var (
 	regRemoveApprove = regexp.MustCompile(`(?mi)^/approve cancel\s*$`)
 )
 
-func (bot *robot) handleApprove(e *atomgit.NoteEvent, cfg *botConfig, log *logrus.Entry) error {
-	if !e.IsPullRequest() || !e.IsPROpen() || !e.IsCreatingCommentEvent() {
-		return nil
+func (bot *robot) handleApprove(p *parameter) error {
+
+	if regAddApprove.MatchString(p.commentContent) {
+		return bot.AddApprove(p)
 	}
 
-	comment := e.GetComment().GetBody()
-	if regAddApprove.MatchString(comment) {
-		return bot.AddApprove(cfg, e, log)
-	}
-
-	if regRemoveApprove.MatchString(comment) {
-		return bot.removeApprove(cfg, e, log)
+	if regRemoveApprove.MatchString(p.commentContent) {
+		return bot.removeApprove(p)
 	}
 
 	return nil
 }
 
-func (bot *robot) AddApprove(cfg *botConfig, e *atomgit.NoteEvent, log *logrus.Entry) error {
-	org, repo := e.GetOrgRepo()
-	commenter := e.GetCommenter()
+func (bot *robot) AddApprove(p *parameter) error {
 
-	isBranchKeeper, IsSetBranch, err := bot.CheckBranchKeeper(org, repo, commenter, e.GetPullRequest(), cfg, log)
+	isBranchKeeper, IsSetBranch, err := bot.CheckBranchKeeper(p)
 	if err != nil {
 		return err
 	}
 
 	if IsSetBranch && !isBranchKeeper {
-		return bot.cli.CreatePRComment(org, repo, e.GetPRNumber(), fmt.Sprintf(
-			commentNoPermissionForLabel, commenter, "add", approvedLabel,
-		))
+		return bot.cli.CreatePRComment(p.prArg, fmt.Sprintf(commentNoPermissionForLabel, p.commentator, "add", approvedLabel))
 	}
 
 	if !IsSetBranch {
-		v, err := bot.hasPermission(org, repo, commenter, false, e.GetPullRequest(), cfg, log)
+		v, e := bot.hasPermission(p, false)
 
-		if err != nil {
-			return err
+		if e != nil {
+			return e
 		}
 
 		if !v {
-			return bot.cli.CreatePRComment(org, repo, e.GetPRNumber(), fmt.Sprintf(
-				commentNoPermissionForLabel, commenter, "add", approvedLabel,
-			))
+			return bot.cli.CreatePRComment(p.prArg, fmt.Sprintf(commentNoPermissionForLabel, p.commentator, "add", approvedLabel))
 		}
 
 	}
 
-	if err := bot.cli.AddPRLabel(org, repo, e.GetPRNumber(), approvedLabel); err != nil {
+	if err = bot.cli.AddPRLabel(p.prArg, approvedLabel); err != nil {
 		return err
 	}
 
-	err = bot.cli.CreatePRComment(
-		org, repo, e.GetPRNumber(),
-		fmt.Sprintf(commentAddLabel, approvedLabel, commenter),
-	)
-	if err != nil {
-		log.Error(err)
+	if err = bot.cli.CreatePRComment(p.prArg, fmt.Sprintf(commentAddLabel, approvedLabel, p.commentator)); err != nil {
+		p.log.Error(err)
 	}
 
-	return bot.tryMerge(e, cfg, false, log)
+	return bot.tryMerge(p, false)
 }
 
-func (bot *robot) removeApprove(cfg *botConfig, e *atomgit.NoteEvent, log *logrus.Entry) error {
-	org, repo := e.GetOrgRepo()
-	commenter := e.GetCommenter()
-
-	isBranchKeeper, IsSetBranch, err := bot.CheckBranchKeeper(org, repo, commenter, e.GetPullRequest(), cfg, log)
+func (bot *robot) removeApprove(p *parameter) error {
+	isBranchKeeper, IsSetBranch, err := bot.CheckBranchKeeper(p)
 	if err != nil {
 		return err
 	}
 
 	if IsSetBranch && !isBranchKeeper {
-		return bot.cli.CreatePRComment(org, repo, e.GetPRNumber(), fmt.Sprintf(
-			commentNoPermissionForLabel, commenter, "remove", approvedLabel,
-		))
+		return bot.cli.CreatePRComment(p.prArg, fmt.Sprintf(commentNoPermissionForLabel, p.commentator, "remove", approvedLabel))
 	}
 
 	if !IsSetBranch {
-		v, err := bot.hasPermission(org, repo, commenter, false, e.GetPullRequest(), cfg, log)
+		v, err := bot.hasPermission(p, false)
 
 		if err != nil {
 			return err
 		}
 
 		if !v {
-			return bot.cli.CreatePRComment(org, repo, e.GetPRNumber(), fmt.Sprintf(
-				commentNoPermissionForLabel, commenter, "remove", approvedLabel,
-			))
+			return bot.cli.CreatePRComment(p.prArg, fmt.Sprintf(commentNoPermissionForLabel, p.commentator, "remove", approvedLabel))
 		}
 
 	}
 
-	err = bot.cli.RemovePRLabel(org, repo, e.GetPRNumber(), approvedLabel)
+	err = bot.cli.RemovePRLabel(p.prArg, approvedLabel)
 	if err != nil {
 		return err
 	}
 
-	return bot.cli.CreatePRComment(
-		org, repo, e.GetPRNumber(),
-		fmt.Sprintf(commentRemovedLabel, approvedLabel, commenter),
-	)
+	return bot.cli.CreatePRComment(p.prArg, fmt.Sprintf(commentRemovedLabel, approvedLabel, p.commentator))
 }

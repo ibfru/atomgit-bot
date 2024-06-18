@@ -5,8 +5,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/opensourceways/go-atomgit/atomgit"
-	"github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/util/sets"
+
+	"github.com/opensourceways/community-robot-lib/utils"
 )
 
 const (
@@ -31,115 +32,106 @@ var (
 	regRemoveLgtm = regexp.MustCompile(`(?mi)^/lgtm cancel\s*$`)
 )
 
-func (bot *robot) handleLGTM(e *atomgit.NoteEvent, cfg *botConfig, log *logrus.Entry) error {
-	if !e.IsPullRequest() || !e.IsPROpen() || !e.IsCreatingCommentEvent() {
-		return nil
+func (bot *robot) handleLGTM(p *parameter) error {
+
+	if regAddLgtm.MatchString(p.commentContent) {
+		return bot.addLGTM(p)
 	}
 
-	comment := e.GetComment().GetBody()
-
-	if regAddLgtm.MatchString(comment) {
-		return bot.addLGTM(cfg, e, log)
-	}
-
-	if regRemoveLgtm.MatchString(comment) {
-		return bot.removeLGTM(cfg, e, log)
+	if regRemoveLgtm.MatchString(p.commentContent) {
+		return bot.removeLGTM(p)
 	}
 
 	return nil
 }
 
-func (bot *robot) addLGTM(cfg *botConfig, e *atomgit.NoteEvent, log *logrus.Entry) error {
-	org, repo := e.GetOrgRepo()
-	number := e.GetPRNumber()
-	commenter := e.GetCommenter()
+func (bot *robot) addLGTM(p *parameter) error {
 
-	if e.GetPRAuthor() == commenter {
-		return bot.cli.CreatePRComment(org, repo, number, commentAddLGTMBySelf)
+	if p.author == p.commentator {
+		return bot.cli.CreatePRComment(p.prArg, commentAddLGTMBySelf)
 	}
 
-	v, err := bot.hasPermission(
-		org, repo, commenter, cfg.CheckPermissionBasedOnSigOwners, e.GetPullRequest(), cfg, log,
-	)
+	v, err := bot.hasPermission(p, p.bcf.CheckPermissionBasedOnSigOwners)
 	if err != nil {
 		return err
 	}
 	if !v {
-		return bot.cli.CreatePRComment(
-			org, repo, number,
-			fmt.Sprintf(commentNoPermissionForLgtmLabel, commenter),
-		)
+		return bot.cli.CreatePRComment(p.prArg, fmt.Sprintf(commentNoPermissionForLgtmLabel, p.commentator))
 	}
 
-	label := genLGTMLabel(commenter, cfg.LgtmCountsRequired)
+	label := genLGTMLabel(p.commentator, p.bcf.LgtmCountsRequired)
 	if label != lgtmLabel {
-		if err := bot.createLabelIfNeed(org, repo, label); err != nil {
-			log.WithError(err).Errorf("create repo label: %s", label)
+		if err = bot.createLabelIfNeed(p, label); err != nil {
+			p.log.WithError(err).Errorf("create repo label: %s", label)
 		}
 	}
 
-	if err := bot.cli.AddPRLabel(org, repo, number, label); err != nil {
+	if err = bot.cli.AddPRLabel(p.prArg, label); err != nil {
 		return err
 	}
 
-	err = bot.cli.CreatePRComment(
-		org, repo, number, fmt.Sprintf(commentAddLabel, label, commenter),
-	)
+	err = bot.cli.CreatePRComment(p.prArg, fmt.Sprintf(commentAddLabel, label, p.commentator))
 	if err != nil {
-		log.Error(err)
+		p.log.Error(err)
 	}
 
-	return bot.tryMerge(e, cfg, false, log)
+	return bot.tryMerge(p, false)
 }
 
-func (bot *robot) removeLGTM(cfg *botConfig, e *atomgit.NoteEvent, log *logrus.Entry) error {
-	org, repo := e.GetOrgRepo()
-	number := e.GetPRNumber()
+func (bot *robot) removeLGTM(p *parameter) error {
 
-	if commenter := e.GetCommenter(); e.GetPRAuthor() != commenter {
-		v, err := bot.hasPermission(
-			org, repo, commenter, cfg.CheckPermissionBasedOnSigOwners, e.GetPullRequest(), cfg, log,
-		)
+	if p.author != p.commentator {
+		v, err := bot.hasPermission(p, p.bcf.CheckPermissionBasedOnSigOwners)
 		if err != nil {
 			return err
 		}
 		if !v {
-			return bot.cli.CreatePRComment(org, repo, number, fmt.Sprintf(
-				commentNoPermissionForLabel, commenter, "remove", lgtmLabel,
-			))
+			return bot.cli.CreatePRComment(p.prArg, fmt.Sprintf(commentNoPermissionForLabel, p.commentator, "remove", lgtmLabel))
 		}
 
-		l := genLGTMLabel(commenter, cfg.LgtmCountsRequired)
-		if err = bot.cli.RemovePRLabel(org, repo, number, l); err != nil {
+		l := genLGTMLabel(p.commentator, p.bcf.LgtmCountsRequired)
+		if err = bot.cli.RemovePRLabel(p.prArg, l); err != nil {
 			return err
 		}
 
-		return bot.cli.CreatePRComment(
-			org, repo, number, fmt.Sprintf(commentRemovedLabel, l, commenter),
-		)
+		return bot.cli.CreatePRComment(p.prArg, fmt.Sprintf(commentRemovedLabel, l, p.commentator))
 	}
 
 	// the author of pr can remove all of lgtm[-login name] kind labels
-	if v := getLGTMLabelsOnPR(e.GetPRLabelSet()); len(v) > 0 {
-		return bot.cli.RemovePRLabels(org, repo, number, v)
+	labels := sets.New[string]()
+	lbs := p.realPR.GetLabels()
+	for i, j := 0, len(lbs); i < j; i++ {
+		labels.Insert(*lbs[i].Name)
+	}
+	if v := getLGTMLabelsOnPR(labels); len(v) > 0 {
+		errs := utils.NewMultiErrors()
+		var e error
+		for _, lb := range v {
+			e = bot.cli.RemovePRLabel(p.prArg, lb)
+
+			if e != nil {
+				errs.AddError(e)
+			}
+		}
+		return errs.Err()
 	}
 
 	return nil
 }
 
-func (bot *robot) createLabelIfNeed(org, repo, label string) error {
-	repoLabels, err := bot.cli.GetRepoLabels(org, repo)
+func (bot *robot) createLabelIfNeed(p *parameter, label string) error {
+	repoLabels, err := bot.cli.GetRepositoryLabels(p.prArg)
 	if err != nil {
 		return err
 	}
 
 	for _, v := range repoLabels {
-		if v.Name == label {
+		if v == label {
 			return nil
 		}
 	}
 
-	return bot.cli.CreateRepoLabel(org, repo, label, "")
+	return bot.cli.CreateRepoLabel(p.prArg.Org, p.prArg.Repo, label)
 }
 
 func genLGTMLabel(commenter string, lgtmCount uint) string {
@@ -155,12 +147,12 @@ func genLGTMLabel(commenter string, lgtmCount uint) string {
 	return l
 }
 
-func getLGTMLabelsOnPR(labels []*atomgit.Label) []string {
+func getLGTMLabelsOnPR(labels sets.Set[string]) []string {
 	var r []string
 
-	for i, j := 0, len(labels); i < j; i++ {
-		if strings.HasPrefix(*labels[i].Name, lgtmLabel) {
-			r = append(r, *labels[i].Name)
+	for lb, _ := range labels {
+		if strings.HasPrefix(lb, lgtmLabel) {
+			r = append(r, lb)
 		}
 	}
 

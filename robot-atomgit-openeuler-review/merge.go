@@ -1,12 +1,13 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/opensourceways/community-robot-lib/atomgitclient"
 
 	"github.com/opensourceways/go-atomgit/atomgit"
 
@@ -25,32 +26,25 @@ const (
 
 var regCheckPr = regexp.MustCompile(`(?mi)^/check-pr\s*$`)
 
-func (bot *robot) handleCheckPR(e *atomgit.PullRequestReviewCommentEvent, cfg *botConfig, log *logrus.Entry) error {
-	if e.GetPullRequest().GetState() != "open" || !regCheckPr.MatchString(e.GetComment().GetBody()) {
+func (bot *robot) handleCheckPR(p *parameter) error {
+	if !regCheckPr.MatchString(p.commentContent) {
 		return nil
 	}
 
-	return bot.tryMerge(e, cfg, true, log)
+	return bot.tryMerge(p, true)
 }
 
-func (bot *robot) tryMerge(e *atomgit.PullRequestReviewCommentEvent, cfg *botConfig, addComment bool, log *logrus.Entry) error {
-	org, repo := e.GetRepo().GetOrgAndRepo()
-	methodOfMerge := bot.genMergeMethod(e.GetPullRequest(), org, repo, log)
-
-	h := mergeHelper{
-		cfg:     cfg,
-		org:     org,
-		repo:    repo,
-		method:  methodOfMerge,
-		cli:     bot.cli,
-		pr:      e.GetPullRequest(),
-		trigger: e.GetCommenter(),
+func (bot *robot) tryMerge(p *parameter, addComment bool) error {
+	h := &mergeHelper{
+		arg:    p,
+		method: bot.genMergeMethod(p),
+		cli:    bot.cli,
 	}
 
-	if r, ok := h.canMerge(log); !ok {
+	if r, ok := h.canMerge(p.log); !ok {
 		if len(r) > 0 && addComment {
 			claYesLabel := ""
-			for _, labelForMerge := range cfg.LabelsForMerge {
+			for _, labelForMerge := range p.bcf.LabelsForMerge {
 				if strings.Contains(labelForMerge, "-cla/yes") {
 					claYesLabel = labelForMerge
 					break
@@ -69,8 +63,8 @@ func (bot *robot) tryMerge(e *atomgit.PullRequestReviewCommentEvent, cfg *botCon
 				"members (including maintainers, committers, and repository administrators) are to be added to "+
 				"**sig-info.yaml** in the pull request. To remove the label, all members to be added must comment "+
 				"'/lgtm' in the pull request.",
-				e.GetCommenter(), strings.Join(r, "\n"), claYesLabel)
-			return bot.cli.CreatePRComment(org, repo, e.GetPRNumber(), comment)
+				p.commentator, strings.Join(r, "\n"), claYesLabel)
+			return bot.cli.CreatePRComment(p.prArg, comment)
 		}
 
 		return nil
@@ -82,39 +76,33 @@ func (bot *robot) tryMerge(e *atomgit.PullRequestReviewCommentEvent, cfg *botCon
 			return err
 		}
 
-		return bot.cli.CreatePRComment(org, repo,
-			e.GetPRNumber(), fmt.Sprintf(prCanNotMergeNotice, e.GetPRAuthor(), methodOfMerge, err.Error()))
+		return bot.cli.CreatePRComment(p.prArg, fmt.Sprintf(prCanNotMergeNotice, p.author, h.method, err.Error()))
 	}
 
 	return nil
 }
 
-func (bot *robot) handleLabelUpdate(e *atomgit.PullRequestEvent, cfg *botConfig, log *logrus.Entry) error {
-	if atomgit.GetPullRequestAction(e) != atomgit.PRActionUpdatedLabel {
+func (bot *robot) handleLabelUpdate(p *parameter) error {
+	if p.action != "updated_label" {
 		return nil
 	}
 
-	org, repo := e.GetOrgRepo()
-	methodOfMerge := bot.genMergeMethod(e.GetPullRequest(), org, repo, log)
+	methodOfMerge := bot.genMergeMethod(p)
 
-	h := mergeHelper{
-		cfg:    cfg,
-		org:    org,
-		repo:   repo,
-		method: methodOfMerge,
+	h := &mergeHelper{
+		arg:    p,
+		method: bot.genMergeMethod(p),
 		cli:    bot.cli,
-		pr:     e.GetPullRequest(),
 	}
 
-	if _, ok := h.canMerge(log); ok {
+	if _, ok := h.canMerge(p.log); ok {
 		if err := h.merge(); err != nil {
 			includeErr := "there are conflicting files"
 			if !strings.Contains(err.Error(), includeErr) {
 				return err
 			}
 
-			return bot.cli.CreatePRComment(org, repo,
-				e.GetPRNumber(), fmt.Sprintf(prCanNotMergeNotice, e.GetPRAuthor(), methodOfMerge, err.Error()))
+			return bot.cli.CreatePRComment(p.prArg, fmt.Sprintf(prCanNotMergeNotice, p.author, methodOfMerge, err.Error()))
 		} else {
 			return nil
 		}
@@ -124,28 +112,28 @@ func (bot *robot) handleLabelUpdate(e *atomgit.PullRequestEvent, cfg *botConfig,
 }
 
 type mergeHelper struct {
-	pr  *atomgit.PullRequest
-	cfg *botConfig
-
-	org     string
-	repo    string
-	method  string
-	trigger string
-
-	cli iClient
+	arg             *parameter
+	cli             iClient
+	method, trigger string
 }
 
 func (m *mergeHelper) merge() error {
-	number := m.pr.Number
 
-	if m.pr.NeedReview || m.pr.NeedTest {
-		v := int32(0)
-		p := atomgit.PullRequestUpdateParam{
-			AssigneesNumber: &v,
-			TestersNumber:   &v,
+	n, urs := m.arg.realPR.GetNeedReview()
+	if n != 0 {
+
+		// TODO
+		if n == 1 && m.arg.realPR.GetAssignee() == nil {
+			err := m.cli.AssignPR(m.arg.prArg, urs)
+			if err != nil {
+				return err
+			}
 		}
 
-		if _, err := m.cli.UpdatePullRequest(m.org, m.repo, number, p); err != nil {
+		// TODO Assignees
+
+		err := m.cli.AssignPR(m.arg.prArg, urs)
+		if err != nil {
 			return err
 		}
 	}
@@ -153,10 +141,10 @@ func (m *mergeHelper) merge() error {
 	desc := m.genMergeDesc()
 
 	bodyStr := ""
-	if m.org == "openeuler" && m.repo == "kernel" {
-		author := m.pr.GetUser().GetLogin()
-		if author == "openeuler-sync-bot" {
-			bodySlice := strings.Split(m.pr.Body, "\n")
+	if m.arg.prArg.Org == "openeuler" && m.arg.prArg.Repo == "kernel" {
+
+		if m.arg.commentator == "openeuler-sync-bot" {
+			bodySlice := strings.Split(m.arg.commentContent, "\n")
 			originPR := strings.Split(strings.Replace(bodySlice[1], "### ", "", -1), "1. ")[1]
 			syncRelatedPR := bodySlice[2]
 
@@ -164,56 +152,56 @@ func (m *mergeHelper) merge() error {
 				strings.Split(syncRelatedPR, "/")[6], "\r", "", -1))
 			relatedOrg := strings.Split(syncRelatedPR, "/")[3]
 			relatedRepo := strings.Split(syncRelatedPR, "/")[4]
-			relatedPR, _ := m.cli.GetGiteePullRequest(relatedOrg, relatedRepo, int32(relatedPRNumber))
+			relatedPR, _ := m.cli.GetSinglePR(atomgitclient.BuildPRIssue(relatedOrg, relatedRepo, relatedPRNumber))
 			relatedDesc := relatedPR.Body
 
 			bodyStr = fmt.Sprintf("\n%s \n%s \n \n%s", originPR, syncRelatedPR, relatedDesc)
 		} else {
-			bodyStr = m.pr.Body
+			bodyStr = m.arg.commentContent
 		}
+
 		return m.cli.MergePR(
-			m.org, m.repo, number,
-			atomgit.PullRequestMergePutParam{
-				MergeMethod: string(m.cfg.MergeMethod),
-				Description: fmt.Sprintf("\n%s \n \n%s \n \n%s \n%s",
-					fmt.Sprintf("Merge Pull Request from: @%s", m.pr.User.GetLogin()),
-					bodyStr, fmt.Sprintf("Link:%s", m.pr.GetHtmlURL()), desc),
+			m.arg.prArg,
+			fmt.Sprintf("\n%s \n \n%s \n \n%s \n%s",
+				fmt.Sprintf("Merge Pull Request from: @%s", m.arg.commentator),
+				bodyStr, fmt.Sprintf("Link:%s", m.arg.realPR.GetHTMLURL()), desc),
+			&atomgit.PullRequestOptions{
+				MergeMethod: string(m.arg.bcf.MergeMethod),
+				SHA:         *m.arg.realPR.MergeCommitSHA,
 			},
 		)
 	}
 
 	return m.cli.MergePR(
-		m.org, m.repo, number,
-		atomgit.PullRequestMergePutParam{
-			MergeMethod: m.method,
-			Description: fmt.Sprintf("\n%s", desc),
+		m.arg.prArg,
+		fmt.Sprintf("\n%s", desc),
+		&atomgit.PullRequestOptions{
+			MergeMethod: string(m.method),
+			SHA:         *m.arg.realPR.MergeCommitSHA,
 		},
 	)
 }
 
 func (m *mergeHelper) canMerge(log *logrus.Entry) ([]string, bool) {
-	if !m.pr.GetMergeable() {
+	if !m.arg.realPR.GetMergeable() {
 		return []string{msgPRConflicts}, false
 	}
 
-	org := m.org
-	repo := m.repo
-	number := m.pr.GetNumber()
-
-	ops, err := m.cli.ListPROperationLogs(org, repo, number)
+	ops, err := m.cli.ListOperationLogs(m.arg.prArg)
 	if err != nil {
 		return []string{}, false
 	}
 
-	for label := range m.getPRLabels() {
-		for _, l := range m.cfg.LabelsNotAllowMerge {
+	labels := m.getPRLabels()
+	for label := range labels {
+		for _, l := range m.arg.bcf.LabelsNotAllowMerge {
 			if l == label {
 				return []string{}, false
 			}
 		}
 	}
 
-	if r := isLabelMatched(m.getPRLabels(), m.cfg, ops, log); len(r) > 0 {
+	if r := isLabelMatched(labels, m.arg.bcf, ops, log); len(r) > 0 {
 		return r, false
 	}
 
@@ -240,15 +228,15 @@ func (m *mergeHelper) canMerge(log *logrus.Entry) ([]string, bool) {
 }
 
 func (m *mergeHelper) getFreezeInfo(log *logrus.Entry) (*freezeItem, error) {
-	branch := m.pr.GetBase().GetRef()
-	for _, v := range m.cfg.FreezeFile {
+	branch := m.arg.realPR.GetBase().GetRef()
+	for _, v := range m.arg.bcf.FreezeFile {
 		fc, err := m.getFreezeContent(v)
 		if err != nil {
 			log.Errorf("get freeze file:%s, err:%s", v.toString(), err.Error())
 			return nil, err
 		}
 
-		if v := fc.getFreezeItem(m.org, branch); v != nil {
+		if v := fc.getFreezeItem(m.arg.prArg.Org, branch); v != nil {
 			return v, nil
 		}
 	}
@@ -264,77 +252,83 @@ func (m *mergeHelper) getFreezeContent(f freezeFile) (freezeContent, error) {
 		return fc, err
 	}
 
-	b, err := base64.StdEncoding.DecodeString(c.Content)
+	s, err := c.GetContent()
 	if err != nil {
 		return fc, err
 	}
 
-	err = yaml.Unmarshal(b, &fc)
+	err = yaml.Unmarshal([]byte(s), &fc)
 
 	return fc, err
 }
 
-func (m *mergeHelper) getPRLabels() sets.String {
-	if m.trigger == "" {
-		return m.pr.LabelsToSet()
+func (m *mergeHelper) getPRLabels() sets.Set[string] {
+	labels := sets.New[string]()
+	lbs := m.arg.realPR.GetLabels()
+	for i, j := 0, len(lbs); i < j; i++ {
+		labels.Insert(*lbs[i].Name)
 	}
 
-	prLabels, err := m.cli.GetPRLabels(m.org, m.repo, m.pr.GetNumber())
+	if m.arg.commentator == "" {
+		return labels
+	}
+
+	prLabels, err := m.cli.GetPRLabels(m.arg.prArg)
 	if err != nil {
-		return m.pr.LabelsToSet()
+		return labels
+	} else {
+		labels.Clear()
 	}
 
-	labels := sets.NewString()
 	for _, v := range prLabels {
-		labels.Insert(v.Name)
+		labels.Insert(v)
 	}
 
 	return labels
 }
 
 func (m *mergeHelper) genMergeDesc() string {
-	comments, err := m.cli.ListPRComments(m.org, m.repo, m.pr.Number)
+	comments, err := m.cli.GetPRComments(m.arg.prArg)
 	if err != nil || len(comments) == 0 {
 		return ""
 	}
 
-	f := func(comment atomgit.PullRequestComments, reg *regexp.Regexp) bool {
-		return reg.MatchString(comment.Body) &&
+	f := func(comment *atomgit.PullRequestComment, reg *regexp.Regexp) bool {
+		return reg.MatchString(comment.GetBody()) &&
 			comment.UpdatedAt == comment.CreatedAt &&
-			comment.User.Login != m.pr.User.Login
+			*comment.User.Login != m.arg.author
 	}
 
-	f2 := func(comment atomgit.PullRequestComments, reg *regexp.Regexp) bool {
-		return reg.MatchString(comment.Body) &&
-			comment.User.Login != m.pr.User.Login
+	f2 := func(comment *atomgit.PullRequestComment, reg *regexp.Regexp) bool {
+		return reg.MatchString(comment.GetBody()) &&
+			*comment.User.Login != m.arg.author
 	}
 
 	reviewers := sets.NewString()
 	signers := sets.NewString()
 	ackers := sets.NewString()
 
-	org, repo := m.org, m.repo
 	for _, c := range comments {
-		if org == "openeuler" && repo == "kernel" {
+		if m.arg.prArg.Org == "openeuler" && m.arg.prArg.Repo == "kernel" {
 			if f2(c, regAddLgtm) {
-				reviewers.Insert(c.User.Login)
+				reviewers.Insert(*c.User.Login)
 			}
 
 			if f2(c, regAddApprove) {
-				signers.Insert(c.User.Login)
+				signers.Insert(*c.User.Login)
 			}
 
 			if f2(c, regAck) {
-				ackers.Insert(c.User.Login)
+				ackers.Insert(*c.User.Login)
 			}
 		}
 
 		if f(c, regAddLgtm) {
-			reviewers.Insert(c.User.Login)
+			reviewers.Insert(*c.User.Login)
 		}
 
 		if f(c, regAddApprove) {
-			signers.Insert(c.User.Login)
+			signers.Insert(*c.User.Login)
 		}
 	}
 
@@ -343,20 +337,20 @@ func (m *mergeHelper) genMergeDesc() string {
 	}
 
 	// kernel return the name and email address
-	if org == "openeuler" && repo == "kernel" {
-		content, err := m.cli.GetPathContent("openeuler", "community", "sig/Kernel/sig-info.yaml", "master")
-		if err != nil {
+	if m.arg.prArg.Org == "openeuler" && m.arg.prArg.Repo == "kernel" {
+		content, e := m.cli.GetPathContent("openeuler", "community", "sig/Kernel/sig-info.yaml", "master")
+		if e != nil {
 			return ""
 		}
 
-		c, err := base64.StdEncoding.DecodeString(content.Content)
-		if err != nil {
+		c, e1 := content.GetContent()
+		if e1 != nil {
 			return ""
 		}
 
 		var s SigInfo
 
-		if err = yaml.Unmarshal(c, &s); err != nil {
+		if err = yaml.Unmarshal([]byte(c), &s); err != nil {
 			return ""
 		}
 
@@ -426,16 +420,16 @@ func (m *mergeHelper) genMergeDesc() string {
 
 	return fmt.Sprintf(
 		"From: @%s \nReviewed-by: @%s \nSigned-off-by: @%s \n",
-		m.pr.User.Login,
+		m.arg.author,
 		strings.Join(reviewers.UnsortedList(), ", @"),
 		strings.Join(signers.UnsortedList(), ", @"),
 	)
 }
 
-func isLabelMatched(labels sets.String, cfg *botConfig, ops []atomgit.OperateLog, log *logrus.Entry) []string {
+func isLabelMatched(labels sets.Set[string], cfg *botConfig, ops []*atomgit.Timeline, log *logrus.Entry) []string {
 	var reasons []string
 
-	needs := sets.NewString(approvedLabel)
+	needs := sets.New[string](approvedLabel)
 	needs.Insert(cfg.LabelsForMerge...)
 
 	if ln := cfg.LgtmCountsRequired; ln == 1 {
@@ -464,7 +458,7 @@ func isLabelMatched(labels sets.String, cfg *botConfig, ops []atomgit.OperateLog
 	}
 
 	if len(cfg.MissingLabelsForMerge) > 0 {
-		missing := sets.NewString(cfg.MissingLabelsForMerge...)
+		missing := sets.New[string](cfg.MissingLabelsForMerge...)
 		if v := missing.Intersection(labels); v.Len() > 0 {
 			vl := v.UnsortedList()
 			var vlp []string
@@ -486,37 +480,33 @@ type labelLog struct {
 	t     time.Time
 }
 
-func getLatestLog(ops []atomgit.OperateLog, label string, log *logrus.Entry) (labelLog, bool) {
+func getLatestLog(ops []*atomgit.Timeline, label string, log *logrus.Entry) (labelLog, bool) {
 	var t time.Time
 
 	index := -1
 
 	for i := range ops {
-		op := &ops[i]
+		op := ops[i]
 
-		if op.ActionType != atomgit.ActionAddLabel || !strings.Contains(op.Content, label) {
+		// TODO
+		if op.GetEvent() != "1231" || !strings.Contains(op.GetBody(), label) {
 			continue
 		}
 
-		ut, err := time.Parse(time.RFC3339, op.CreatedAt)
-		if err != nil {
-			log.Warnf("parse time:%s failed", op.CreatedAt)
-
-			continue
-		}
+		ut := op.GetCreatedAt()
 
 		if index < 0 || ut.After(t) {
-			t = ut
+			t = ut.Local()
 			index = i
 		}
 	}
 
 	if index >= 0 {
-		if user := ops[index].User; user != nil && user.Login != "" {
+		if user := ops[index].GetUser(); user != nil && user.GetLogin() != "" {
 			return labelLog{
 				label: label,
 				t:     t,
-				who:   user.Login,
+				who:   user.GetLogin(),
 			}, true
 		}
 	}
@@ -524,7 +514,7 @@ func getLatestLog(ops []atomgit.OperateLog, label string, log *logrus.Entry) (la
 	return labelLog{}, false
 }
 
-func checkLabelsLegal(labels sets.String, needs sets.String, ops []atomgit.OperateLog, legalOperator string,
+func checkLabelsLegal(labels sets.Set[string], needs sets.Set[string], ops []*atomgit.Timeline, legalOperator string,
 	log *logrus.Entry) string {
 	f := func(label string) string {
 		v, b := getLatestLog(ops, label, log)

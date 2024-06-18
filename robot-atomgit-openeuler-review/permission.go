@@ -13,9 +13,9 @@ import (
 const ownerFile = "OWNERS"
 const sigInfoFile = "sig-info.yaml"
 
-func (bot *robot) hasPermission(p *param, needCheckSig bool) (bool, error) {
+func (bot *robot) hasPermission(p *parameter, needCheckSig bool) (bool, error) {
 
-	prm, err := bot.cli.GetUserPermissionOfRepo(p.prIssue.Org, p.prIssue.Repo, p.commentator)
+	prm, err := bot.cli.GetUserPermissionOfRepo(p.prArg.Org, p.prArg.Repo, p.commentator)
 	if err != nil {
 		return false, err
 	}
@@ -31,15 +31,15 @@ func (bot *robot) hasPermission(p *param, needCheckSig bool) (bool, error) {
 	return false, nil
 }
 
-func (bot *robot) isOwnerOfSig(p *param) (bool, error) {
-	changes, err := bot.cli.GetPullRequestChanges(p.prIssue)
+func (bot *robot) isOwnerOfSig(p *parameter) (bool, error) {
+	changes, err := bot.cli.GetPullRequestChanges(p.prArg)
 	if err != nil || len(changes) == 0 {
 		return false, err
 	}
 
 	paths := sets.NewString()
 	for _, file := range changes {
-		if !p.cnf.regSigDir.MatchString(*file.Filename) || strings.Count(*file.Filename, "/") > 2 {
+		if !p.bcf.regSigDir.MatchString(*file.Filename) || strings.Count(*file.Filename, "/") > 2 {
 			return false, nil
 		}
 
